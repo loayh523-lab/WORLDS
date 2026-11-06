@@ -2123,7 +2123,7 @@ func _update_wildlife(delta: float) -> void:
     for index in range(wildlife_agents.size()):
         var animal: Dictionary = wildlife_agents[index]
         var root: Node3D = animal["root"]
-        if not is_instance_valid(root):
+        if not is_instance_valid(root) or not root.visible:
             continue
 
         var timer := float(animal["timer"]) - delta
@@ -2933,6 +2933,12 @@ func _set_tree_density(density: float) -> void:
         grass_field.multimesh.visible_instance_count = clampi(roundi(float(total_grass_instances) * current_tree_density), 1, total_grass_instances)
     if rock_field and rock_field.multimesh:
         rock_field.multimesh.visible_instance_count = clampi(roundi(float(total_rock_instances) * current_tree_density), 1, total_rock_instances)
+    var visible_animals := clampi(roundi(float(wildlife_agents.size()) * current_tree_density), 0, wildlife_agents.size())
+    for index in range(wildlife_agents.size()):
+        var animal: Dictionary = wildlife_agents[index]
+        var root: Node3D = animal["root"]
+        if is_instance_valid(root):
+            root.visible = index < visible_animals
 
 func _on_fps_selected(index: int) -> void:
     current_fps_target = fps_option.get_item_id(index)
