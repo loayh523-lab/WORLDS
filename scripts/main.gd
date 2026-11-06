@@ -106,6 +106,8 @@ var joystick_knob: TextureRect
 var joystick_center := Vector2.ZERO
 var joystick_vector := Vector2.ZERO
 var joystick_touch_index := -1
+var camera_touch_index := -1
+var touch_action_indices: Dictionary = {}
 var camera_sensitivity := CAMERA_DRAG_SENSITIVITY
 var camera_distance := 7.0
 var camera_fov := 70.0
@@ -954,10 +956,10 @@ func _create_hud() -> void:
     health_bar.show_percentage = false
     health_bar.custom_minimum_size.y = 12.0
     hud_column.add_child(health_bar)
-    survival_bars["food"] = _create_survival_bar(hud_column, "FOOD", hunger)
-    survival_bars["water"] = _create_survival_bar(hud_column, "WATER", thirst)
-    survival_bars["rest"] = _create_survival_bar(hud_column, "REST", rest)
-    survival_bars["energy"] = _create_survival_bar(hud_column, "ENERGY", stamina)
+    survival_bars["food"] = _create_survival_bar(hud_column, "أكل", hunger)
+    survival_bars["water"] = _create_survival_bar(hud_column, "ماء", thirst)
+    survival_bars["rest"] = _create_survival_bar(hud_column, "راحة", rest)
+    survival_bars["energy"] = _create_survival_bar(hud_column, "طاقة", stamina)
 
     mobile_controls = Control.new()
     mobile_controls.name = "TouchLabels"
@@ -973,10 +975,10 @@ func _create_hud() -> void:
     pressed_touch_texture = _make_touch_texture(Color(0.16, 0.58, 0.46, 0.94))
     var screen_size := get_viewport().get_visible_rect().size
     _create_virtual_joystick(screen_size)
-    _add_control_button("USE", Vector2(screen_size.x * 0.75, screen_size.y * 0.70), "interact", true)
-    _add_control_button("BUILD", Vector2(screen_size.x * 0.88, screen_size.y * 0.70), "build", true)
-    _add_control_button("RUN", Vector2(screen_size.x * 0.75, screen_size.y * 0.86), "run", true)
-    _add_control_button("JUMP", Vector2(screen_size.x * 0.88, screen_size.y * 0.86), "jump", true)
+    _add_control_button("تفاعل", Vector2(screen_size.x * 0.75, screen_size.y * 0.70), "interact", true)
+    _add_control_button("بناء", Vector2(screen_size.x * 0.88, screen_size.y * 0.70), "build", true)
+    _add_control_button("ركض", Vector2(screen_size.x * 0.75, screen_size.y * 0.86), "run", true)
+    _add_control_button("قفز", Vector2(screen_size.x * 0.88, screen_size.y * 0.86), "jump", true)
 
     var menu_button := Button.new()
     menu_button.name = "OpenMainMenu"
@@ -1168,7 +1170,7 @@ func _create_virtual_joystick(screen_size: Vector2) -> void:
 
     var movement_caption := Label.new()
     movement_caption.name = "MovementCaption"
-    movement_caption.text = "MOVE"
+    movement_caption.text = "حركة"
     movement_caption.position = joystick_center + Vector2(-38.0, 45.0)
     movement_caption.size = Vector2(76.0, 18.0)
     movement_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1213,9 +1215,7 @@ func _add_control_button(label_text: String, center: Vector2, action: String, is
     button.shape = hit_shape
     button.texture_normal = normal_touch_texture
     button.texture_pressed = pressed_touch_texture
-    button.visibility_mode = TouchScreenButton.VISIBILITY_TOUCHSCREEN_ONLY
-    button.pressed.connect(_on_control_pressed.bind(action))
-    button.released.connect(_on_control_released.bind(action))
+    button.visibility_mode = TouchScreenButton.VISIBILITY_ALWAYS
     touch_button_layer.add_child(button)
     action_buttons[action] = button
 
@@ -1247,9 +1247,15 @@ func _move_action_button(action: String, center: Vector2) -> void:
 func _action_button_at(pointer_position: Vector2) -> String:
     for action in action_buttons:
         var button: TouchScreenButton = action_buttons[action]
-        if pointer_position.distance_to(button.position) <= 64.0 * control_scale:
+        if pointer_position.distance_to(button.position) <= 60.0 * control_scale:
             return str(action)
     return ""
+
+func _set_touch_button_visual(action: String, is_pressed: bool) -> void:
+    if not action_buttons.has(action):
+        return
+    var button: TouchScreenButton = action_buttons[action]
+    button.texture_normal = pressed_touch_texture if is_pressed else normal_touch_texture
 
 func _set_control_layout_edit(enabled: bool) -> void:
     control_layout_edit_mode = enabled
@@ -1380,11 +1386,12 @@ func _create_minimap(layer: CanvasLayer) -> void:
 
     minimap_toggle_button = Button.new()
     minimap_toggle_button.name = "ToggleWorldMap"
-    minimap_toggle_button.text = "MAP  •  HIDE"
+    minimap_toggle_button.text = "إظهار الخريطة"
     minimap_toggle_button.position = Vector2(get_viewport().get_visible_rect().size.x * 0.5 - 72.0, 18.0)
     minimap_toggle_button.custom_minimum_size = Vector2(144.0, 34.0)
     minimap_toggle_button.pressed.connect(_toggle_minimap)
     layer.add_child(minimap_toggle_button)
+    minimap_panel.visible = false
     _update_minimap()
 
 func _toggle_minimap() -> void:
@@ -1392,7 +1399,7 @@ func _toggle_minimap() -> void:
         return
     minimap_panel.visible = not minimap_panel.visible
     if minimap_toggle_button:
-        minimap_toggle_button.text = "MAP  •  HIDE" if minimap_panel.visible else "MAP  •  SHOW"
+        minimap_toggle_button.text = "إخفاء الخريطة" if minimap_panel.visible else "إظهار الخريطة"
 
 func _update_minimap() -> void:
     if not player or not minimap_marker:
@@ -1807,9 +1814,9 @@ func _input(event: InputEvent) -> void:
     elif event is InputEventScreenTouch:
         if control_layout_edit_mode:
             if event.pressed:
-                var action := _action_button_at(event.position)
-                if action != "":
-                    layout_drag_action = action
+                var edit_action := _action_button_at(event.position)
+                if edit_action != "":
+                    layout_drag_action = edit_action
                     layout_touch_index = event.index
                     get_viewport().set_input_as_handled()
             elif event.index == layout_touch_index:
@@ -1817,13 +1824,41 @@ func _input(event: InputEvent) -> void:
                 layout_touch_index = -1
                 _save_game()
                 get_viewport().set_input_as_handled()
-        elif event.pressed and joystick_touch_index == -1 and event.position.distance_to(joystick_center) <= 82.0:
-            joystick_touch_index = event.index
-            _update_virtual_joystick(event.position)
-            get_viewport().set_input_as_handled()
-        elif not event.pressed and event.index == joystick_touch_index:
-            _reset_virtual_joystick()
-            get_viewport().set_input_as_handled()
+            return
+
+        if event.pressed:
+            if _is_frontend_visible():
+                return
+            if joystick_touch_index == -1 and event.position.distance_to(joystick_center) <= 86.0:
+                joystick_touch_index = event.index
+                _update_virtual_joystick(event.position)
+                get_viewport().set_input_as_handled()
+                return
+
+            var pressed_action := _action_button_at(event.position)
+            if pressed_action != "":
+                touch_action_indices[event.index] = pressed_action
+                _set_touch_button_visual(pressed_action, true)
+                _on_control_pressed(pressed_action)
+                get_viewport().set_input_as_handled()
+                return
+
+            var visible_size := get_viewport().get_visible_rect().size
+            if camera_touch_index == -1 and event.position.x >= visible_size.x * 0.40 and event.position.y < visible_size.y - 185.0:
+                camera_touch_index = event.index
+        else:
+            if event.index == joystick_touch_index:
+                _reset_virtual_joystick()
+                get_viewport().set_input_as_handled()
+            elif touch_action_indices.has(event.index):
+                var released_action := str(touch_action_indices[event.index])
+                touch_action_indices.erase(event.index)
+                _on_control_released(released_action)
+                _set_touch_button_visual(released_action, false)
+                get_viewport().set_input_as_handled()
+            elif event.index == camera_touch_index:
+                camera_touch_index = -1
+                get_viewport().set_input_as_handled()
     elif event is InputEventScreenDrag:
         if control_layout_edit_mode and event.index == layout_touch_index and layout_drag_action != "":
             _move_action_button(layout_drag_action, event.position)
@@ -1831,8 +1866,11 @@ func _input(event: InputEvent) -> void:
         elif event.index == joystick_touch_index:
             _update_virtual_joystick(event.position)
             get_viewport().set_input_as_handled()
-        else:
+        elif touch_action_indices.has(event.index):
+            get_viewport().set_input_as_handled()
+        elif event.index == camera_touch_index:
             _rotate_camera(event.relative, event.position)
+            get_viewport().set_input_as_handled()
     elif event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
         _rotate_camera(event.relative, event.position)
 
