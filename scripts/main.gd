@@ -226,69 +226,80 @@ func _height_at(x: float, z: float) -> float:
     return broad_hills + ridges + upland + valley
 
 func _create_terrain() -> void:
-    var vertices := PackedVector3Array()
-    var colors := PackedColorArray()
-    var indices := PackedInt32Array()
+    # Keep the current prototype world at 512 m, but split its surface into
+    # 256 m terrain tiles. This creates useful culling/collision boundaries
+    # and establishes the same tile size planned for the larger world.
+    var chunks_per_axis := 2
+    var steps_per_chunk: int = int(GRID_STEPS / float(chunks_per_axis))
+    var terrain_material := StandardMaterial3D.new()
+    terrain_material.vertex_color_use_as_albedo = true
+    terrain_material.roughness = 1.0
     var step := WORLD_SIZE / float(GRID_STEPS)
 
-    for z_index in range(GRID_STEPS + 1):
-        for x_index in range(GRID_STEPS + 1):
-            var x := -WORLD_SIZE * 0.5 + float(x_index) * step
-            var z := -WORLD_SIZE * 0.5 + float(z_index) * step
-            var y := _height_at(x, z)
-            vertices.append(Vector3(x, y, z))
+    for chunk_z in range(chunks_per_axis):
+        for chunk_x in range(chunks_per_axis):
+            var vertices := PackedVector3Array()
+            var colors := PackedColorArray()
+            var indices := PackedInt32Array()
 
-            var tint := Color(0.20, 0.39, 0.18)
-            var variation: float = clampf((y + 3.0) / 24.0, 0.0, 1.0)
-            var ground_breakup := sin(x * 0.19) * cos(z * 0.16) * 0.045
-            tint = tint.lerp(Color(0.43, 0.49, 0.30), clampf(variation * 0.62 + ground_breakup, 0.0, 0.72))
-            var desert_weight := clampf((x - 125.0) / 105.0, 0.0, 1.0)
-            var snow_weight := clampf((-z - 125.0) / 100.0, 0.0, 1.0)
-            tint = tint.lerp(Color(0.66, 0.53, 0.31), desert_weight)
-            tint = tint.lerp(Color(0.76, 0.82, 0.83), snow_weight)
-            var exposed_rock := clampf((y - 20.0) / 12.0, 0.0, 0.68)
-            tint = tint.lerp(Color(0.42, 0.44, 0.43), exposed_rock)
-            colors.append(tint)
+            for local_z in range(steps_per_chunk + 1):
+                for local_x in range(steps_per_chunk + 1):
+                    var global_x_index := chunk_x * steps_per_chunk + local_x
+                    var global_z_index := chunk_z * steps_per_chunk + local_z
+                    var x := -WORLD_SIZE * 0.5 + float(global_x_index) * step
+                    var z := -WORLD_SIZE * 0.5 + float(global_z_index) * step
+                    var y := _height_at(x, z)
+                    vertices.append(Vector3(x, y, z))
 
-    for z_index in range(GRID_STEPS):
-        for x_index in range(GRID_STEPS):
-            var a := z_index * (GRID_STEPS + 1) + x_index
-            var b := a + 1
-            var c := a + GRID_STEPS + 1
-            var d := c + 1
-            indices.append(a)
-            indices.append(c)
-            indices.append(b)
-            indices.append(b)
-            indices.append(c)
-            indices.append(d)
+                    var tint := Color(0.20, 0.39, 0.18)
+                    var variation: float = clampf((y + 3.0) / 24.0, 0.0, 1.0)
+                    var ground_breakup := sin(x * 0.19) * cos(z * 0.16) * 0.045
+                    tint = tint.lerp(Color(0.43, 0.49, 0.30), clampf(variation * 0.62 + ground_breakup, 0.0, 0.72))
+                    var desert_weight := clampf((x - 125.0) / 105.0, 0.0, 1.0)
+                    var snow_weight := clampf((-z - 125.0) / 100.0, 0.0, 1.0)
+                    tint = tint.lerp(Color(0.66, 0.53, 0.31), desert_weight)
+                    tint = tint.lerp(Color(0.76, 0.82, 0.83), snow_weight)
+                    var exposed_rock := clampf((y - 20.0) / 12.0, 0.0, 0.68)
+                    tint = tint.lerp(Color(0.42, 0.44, 0.43), exposed_rock)
+                    colors.append(tint)
 
-    var arrays := []
-    arrays.resize(Mesh.ARRAY_MAX)
-    arrays[Mesh.ARRAY_VERTEX] = vertices
-    arrays[Mesh.ARRAY_COLOR] = colors
-    arrays[Mesh.ARRAY_INDEX] = indices
+            for local_z in range(steps_per_chunk):
+                for local_x in range(steps_per_chunk):
+                    var a := local_z * (steps_per_chunk + 1) + local_x
+                    var b := a + 1
+                    var c := a + steps_per_chunk + 1
+                    var d := c + 1
+                    indices.append(a)
+                    indices.append(c)
+                    indices.append(b)
+                    indices.append(b)
+                    indices.append(c)
+                    indices.append(d)
 
-    var mesh := ArrayMesh.new()
-    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-    var material := StandardMaterial3D.new()
-    material.vertex_color_use_as_albedo = true
-    material.roughness = 1.0
-    mesh.surface_set_material(0, material)
+            var arrays := []
+            arrays.resize(Mesh.ARRAY_MAX)
+            arrays[Mesh.ARRAY_VERTEX] = vertices
+            arrays[Mesh.ARRAY_COLOR] = colors
+            arrays[Mesh.ARRAY_INDEX] = indices
 
-    var terrain := MeshInstance3D.new()
-    terrain.name = "Terrain"
-    terrain.mesh = mesh
-    add_child(terrain)
+            var mesh := ArrayMesh.new()
+            mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+            mesh.surface_set_material(0, terrain_material)
 
-    var body := StaticBody3D.new()
-    body.name = "TerrainCollision"
-    var collision := CollisionShape3D.new()
-    var shape := ConcavePolygonShape3D.new()
-    shape.set_faces(_vertices_to_faces(vertices, indices))
-    collision.shape = shape
-    body.add_child(collision)
-    add_child(body)
+            var terrain_chunk := MeshInstance3D.new()
+            terrain_chunk.name = "TerrainChunk_%d_%d" % [chunk_x, chunk_z]
+            terrain_chunk.mesh = mesh
+            add_child(terrain_chunk)
+
+            var body := StaticBody3D.new()
+            body.name = "TerrainCollision_%d_%d" % [chunk_x, chunk_z]
+            var collision := CollisionShape3D.new()
+            var shape := ConcavePolygonShape3D.new()
+            shape.set_faces(_vertices_to_faces(vertices, indices))
+            collision.shape = shape
+            body.add_child(collision)
+            add_child(body)
+
 
 func _vertices_to_faces(vertices: PackedVector3Array, indices: PackedInt32Array) -> PackedVector3Array:
     var faces := PackedVector3Array()
