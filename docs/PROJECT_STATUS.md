@@ -13,7 +13,8 @@ Last updated: 2026-11-06
 - Added a timber crossing over the river, a stone approach from the village, a roofed river pavilion with benches and willow trees, and a marked Valleywatch Overlook reached by a stone path.
 - Expanded the settlement with a working well, two produce stalls, and eight villagers with simple time-of-day destinations around their homes, market, and well; walking limbs animate, but this is not a full social simulation or economy.
 - Added a buildable timber cabin with an open entrance, interior bed and room layout; proximity enables a rest interaction, and cabin placement is included in local save/load and shared build synchronization.
-- Added a saved starter-journey sequence: gather materials, build a cabin, discover the river crossing, and speak with a villager; the HUD now displays the active objective.
+- Added a saved starter-journey sequence: gather materials, build a cabin, discover the river crossing, speak with a villager, then find the ancient memory stone and follow its revealed trail; the HUD displays the active objective.
+- Added lightweight leg gait animation for deer, rabbits, foxes, and boars; distant wildlife stops animating outside the active range.
 - Added live HUD bars for food, water, rest, and sprint energy. Sprint energy drains while running, recovers while walking/standing, and is saved locally.
 - Added landmark dots to the map for the village well, river crossing, pavilion, and lookout; added safe world-edge clamping and recovery if the player falls below the terrain.
 - Improved mobile control feedback with a MOVE label; movement direction is factored into a testable function, and camera drag ignores the map, settings, network, and build panels.
