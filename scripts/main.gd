@@ -3860,6 +3860,8 @@ func _start_gameplay_smoke_test() -> void:
         get_tree().quit(1)
         return
 
+    var stamina_before_save := stamina
+    stamina = 61.25
     _save_game()
     var saved := ConfigFile.new()
     if saved.load(SAVE_PATH) != OK:
@@ -3868,6 +3870,12 @@ func _start_gameplay_smoke_test() -> void:
         return
     var saved_inventory: Variant = saved.get_value("world", "shared_inventory", {})
     var saved_buildings: Variant = saved.get_value("world", "placed_buildings", [])
+    var saved_stamina: float = float(saved.get_value("player", "stamina", -1.0))
+    if not is_equal_approx(saved_stamina, 61.25):
+        push_error("GAMEPLAY_SMOKE_FAIL: sprint stamina was not persisted")
+        get_tree().quit(1)
+        return
+    stamina = stamina_before_save
     var saved_resources: Variant = saved.get_value("world", "resource_amounts", [])
     if not (saved_inventory is Dictionary) or int(saved_inventory.get("wood", -1)) != 0:
         push_error("GAMEPLAY_SMOKE_FAIL: inventory was not persisted")
