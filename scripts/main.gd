@@ -380,7 +380,7 @@ func _create_environment_details() -> void:
         var x := rng.randf_range(-WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
         var z := rng.randf_range(-WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
         if absf(x - sin(z * 0.018) * 18.0) < 9.0 or Vector2(x, z).length() < 20.0:
-            grass_multi.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3(0, -1000, 0)))
+            grass_multi.set_instance_transform(i, Transform3D(Basis.IDENTITY, Vector3(0, -1000, 0)))
             continue
         var height_scale := rng.randf_range(0.65, 1.35)
         var blade_scale := rng.randf_range(0.75, 1.35)
