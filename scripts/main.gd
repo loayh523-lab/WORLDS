@@ -1488,7 +1488,6 @@ func _on_master_volume_changed(value: float) -> void:
         AudioServer.set_bus_mute(0, true)
     else:
         AudioServer.set_bus_mute(0, false)
-    _save_game()
 
 func _on_camera_sensitivity_changed(value: float) -> void:
     camera_sensitivity = clampf(value, 0.003, 0.012)
