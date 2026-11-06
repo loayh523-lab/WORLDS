@@ -23,10 +23,32 @@ jobs:
           include-templates: false
 
       - name: Import project and parse scripts
-        run: godot --headless --editor --path . --quit
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMPORT_LOG="$RUNNER_TEMP/worlds-import.log"
+          if ! godot --headless --editor --path . --quit >"$IMPORT_LOG" 2>&1; then
+            cat "$IMPORT_LOG"
+            exit 1
+          fi
+          cat "$IMPORT_LOG"
+          if grep -E "SCRIPT ERROR:|Parse Error:|Failed to load script" "$IMPORT_LOG"; then
+            exit 1
+          fi
 
       - name: Run main scene smoke test
-        run: godot --headless --path . --quit-after 60
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCENE_LOG="$RUNNER_TEMP/worlds-scene.log"
+          if ! godot --headless --path . --quit-after 60 >"$SCENE_LOG" 2>&1; then
+            cat "$SCENE_LOG"
+            exit 1
+          fi
+          cat "$SCENE_LOG"
+          if grep -E "SCRIPT ERROR:|Parse Error:|Failed to load script" "$SCENE_LOG"; then
+            exit 1
+          fi
 
       - name: Exercise LAN host and client processes
         shell: bash
@@ -41,8 +63,10 @@ jobs:
           }
           trap cleanup EXIT
 
+          HOST_READY=false
           for attempt in $(seq 1 30); do
             if grep -q "LAN_SMOKE_HOST_READY" "$HOST_LOG"; then
+              HOST_READY=true
               break
             fi
             if ! kill -0 "$HOST_PID" 2>/dev/null; then
@@ -51,7 +75,10 @@ jobs:
             fi
             sleep 0.25
           done
-          grep -q "LAN_SMOKE_HOST_READY" "$HOST_LOG"
+          if [ "$HOST_READY" != "true" ]; then
+            cat "$HOST_LOG"
+            exit 1
+          fi
 
           godot --headless --path . -- --lan-smoke-client >"$CLIENT_LOG" 2>&1 &
           CLIENT_PID=$!
