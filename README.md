@@ -2,24 +2,37 @@
 
 An original open-world adventure project built with Godot 4, targeting Android first and PC later.
 
-## Current prototype
+## Current gameplay prototype
 
-The repository contains an early 3D playable-scene prototype:
-- Procedural rolling terrain, a winding river valley, and a small forest.
-- Instanced tree meshes to reduce scene-object overhead.
-- A stylized humanoid placeholder with a basic walk cycle and a separate orbit camera.
-- Keyboard movement, jump, touch movement controls, and camera drag.
-- A basic day/night cycle (one in-game day is 20 real minutes).
-- Early survival interactions: drink from the river, gather wild berries, and rest at a campsite.
-- A first experiment with the **World Memory** idea: awaken a memory stone to reveal a glowing trail through the landscape.
+- Procedural rolling terrain, winding river valley, and a small instanced forest.
+- Stylized humanoid character with a basic walk cycle and third-person camera.
+- Keyboard movement, multitouch movement controls, jump, interaction, and camera drag.
+- Basic day/night cycle.
+- Survival interactions: drink from the river, gather wild berries, and rest at camp.
+- World Memory experiment: awaken a stone to reveal a glowing trail.
+- Local autosave for position, survival values, world time, berries, and memory activation.
+- Experimental two-phone LAN co-op: one device hosts and one joins over the same Wi-Fi; player positions and basic shared world interactions synchronize through ENet/UDP.
+- Quality presets and selectable frame-rate caps, with an adaptive low-cost profile.
 
-These systems are prototypes, not a finished game. Final character art, polished environments, animals, weather, deeper survival, building, persistent world changes, saves, and multiplayer are not implemented yet.
+This is still a development prototype. It is not a finished or store-ready game. The LAN path needs testing on two physical phones, and the character, environment, interaction design, and survival systems still need substantial work.
 
-## Download a test build
+## LAN co-op test
 
-A 64-bit Android debug APK has been exported successfully by GitHub Actions. The build is for testing only and has not yet been verified on a physical Android device. The APK is generated with a temporary debug signing key and is not a release-store build.
+1. Connect both Android phones to the same Wi-Fi network.
+2. On the first phone, press **CREATE WORLD** and note the displayed local IP address.
+3. On the second phone, enter that IP and press **JOIN WORLD**.
+4. Move both players and test shared berries, the campsite, and World Memory.
 
-Open the [Android debug APK workflow](https://github.com/loayh523-lab/WORLDS/actions/workflows/android-apk.yml), select its latest successful run, and download the `WORLDS-android-debug` artifact.
+See [LAN playtest guide](docs/LAN_PLAYTEST_AR.md) for conditions and current limits.
+
+## Performance and size targets
+
+- Android initial installation target: at most 700 MB.
+- Optional world packs are intended to remain separate from the initial installation; the planning ceiling for installed optional content is 2 GB.
+- Frame-rate caps: 20, 30, 45, 60, 90, and 120 FPS. These are caps, not guaranteed frame rates.
+- Compatibility renderer with quality options based on object density, shadows, and fog.
+
+See [Performance and size targets](docs/PERFORMANCE_AND_SIZE_TARGETS.md). Optional downloadable world packs are not available yet.
 
 ## Open the project
 
@@ -28,14 +41,7 @@ Open the [Android debug APK workflow](https://github.com/loayh523-lab/WORLDS/act
 3. In Godot, choose **Import** and select the folder containing `project.godot`.
 4. Open `scenes/main.tscn` and press **Run Project**.
 
-## Controls
+## Android build status
 
-- Keyboard: WASD to move, Space to jump, E to interact.
-- Touch: use the on-screen directional buttons, Jump, and Use.
-- Camera: drag in the upper-right area of the screen. On desktop, hold the right mouse button and move the mouse.
+The repository has an Android debug export workflow. CI export success only proves the package was produced; it does not prove that the app launches, stays responsive, or connects on physical phones. This LAN build is being validated separately. No test APK is being designated as the final game build.
 
-## Automated checks
-
-GitHub Actions runs a headless project import and a short main-scene smoke test. A separate workflow installs Android build tools and matching Godot export templates, then exports a 64-bit debug APK. A successful CI run does not replace testing on a physical phone.
-
-See [Project Status](docs/PROJECT_STATUS.md) for implemented features and next milestones, and [Gameplay Vision (Arabic)](docs/GAMEPLAY_VISION_AR.md) for the evolving game identity.
