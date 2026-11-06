@@ -1871,6 +1871,35 @@ func _create_resource_nodes() -> void:
         {"kind": "fiber", "position": Vector2(111.0, 43.0), "amount": 5}
     ]
 
+    var resource_rng := RandomNumberGenerator.new()
+    resource_rng.seed = 20261112
+    for generated_index in range(48):
+        var resource_x := resource_rng.randf_range(-WORLD_SIZE * 0.45, WORLD_SIZE * 0.45)
+        var resource_z := resource_rng.randf_range(-WORLD_SIZE * 0.45, WORLD_SIZE * 0.45)
+        var river_center := sin(resource_z * 0.018) * 18.0
+        if absf(resource_x - river_center) < 13.0:
+            continue
+        if Vector2(resource_x, resource_z).length() < 24.0:
+            continue
+        var resource_kind := "fiber"
+        if resource_x > 125.0:
+            resource_kind = "stone" if generated_index % 2 == 0 else "fiber"
+        elif resource_z < -125.0:
+            resource_kind = "wood" if generated_index % 2 == 0 else "stone"
+        else:
+            match generated_index % 3:
+                0:
+                    resource_kind = "wood"
+                1:
+                    resource_kind = "stone"
+                _:
+                    resource_kind = "fiber"
+        resource_layout.append({
+            "kind": resource_kind,
+            "position": Vector2(resource_x, resource_z),
+            "amount": 3 if resource_kind == "wood" else 4
+        })
+
     for entry in resource_layout:
         var kind: String = entry["kind"]
         var point: Vector2 = entry["position"]
