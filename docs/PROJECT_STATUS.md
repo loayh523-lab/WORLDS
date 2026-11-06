@@ -8,6 +8,8 @@ Last updated: 2026-11-06
 - Godot 4 project using the GL Compatibility renderer.
 - Landscape mobile orientation and keep-screen-on setting.
 - Procedural rolling terrain with collision, river valley, and instanced forest.
+- Procedural playable terrain area expanded to 512 × 512 metres, with broader rolling hills and a wider winding river valley.
+- Instanced environmental detail: 750 varied tree instances, 4,200 meadow grass instances, and 260 scattered rocks; quality presets scale their visible density together.
 - Stylized placeholder character, walking animation, third-person follow camera.
 - Keyboard movement plus a two-finger-friendly virtual analog joystick for mobile movement; the right side remains available for camera drag.
 - Touch actions for interaction, sprint, and jump, with simultaneous-touch input.
