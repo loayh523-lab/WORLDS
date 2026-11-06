@@ -908,6 +908,18 @@ func _create_virtual_joystick(screen_size: Vector2) -> void:
     joystick_knob.mouse_filter = Control.MOUSE_FILTER_IGNORE
     mobile_controls.add_child(joystick_knob)
 
+    var movement_caption := Label.new()
+    movement_caption.name = "MovementCaption"
+    movement_caption.text = "MOVE"
+    movement_caption.position = joystick_center + Vector2(-38.0, 45.0)
+    movement_caption.size = Vector2(76.0, 18.0)
+    movement_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    movement_caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    movement_caption.add_theme_color_override("font_color", Color(0.96, 1.0, 0.92, 0.94))
+    movement_caption.add_theme_font_size_override("font_size", 10)
+    movement_caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    mobile_controls.add_child(movement_caption)
+
 func _update_virtual_joystick(pointer_position: Vector2) -> void:
     var offset := pointer_position - joystick_center
     var radius := 52.0
