@@ -57,6 +57,8 @@ var build_preview: MeshInstance3D
 var build_preview_material: StandardMaterial3D
 var camp_position := Vector3.ZERO
 var village_well_position := Vector3.ZERO
+var river_pavilion_position := Vector3.ZERO
+var river_crossing_position := Vector3.ZERO
 var memory_position := Vector3.ZERO
 var memory_awakened := false
 var status_note := ""
@@ -981,6 +983,20 @@ func _on_control_pressed(action: String) -> void:
 func _on_control_released(action: String) -> void:
     pressed_actions.erase(action)
 
+func _paint_map_marker(map_image: Image, world_position: Vector3, color: Color, radius: int) -> void:
+    if map_image == null or WORLD_SIZE <= 0.0:
+        return
+    var pixel_x := roundi((world_position.x + WORLD_SIZE * 0.5) / WORLD_SIZE * 191.0)
+    var pixel_y := roundi((world_position.z + WORLD_SIZE * 0.5) / WORLD_SIZE * 191.0)
+    for offset_y in range(-radius, radius + 1):
+        for offset_x in range(-radius, radius + 1):
+            if offset_x * offset_x + offset_y * offset_y > radius * radius:
+                continue
+            var px := pixel_x + offset_x
+            var py := pixel_y + offset_y
+            if px >= 0 and px < 192 and py >= 0 and py < 192:
+                map_image.set_pixel(px, py, color)
+
 func _create_minimap(layer: CanvasLayer) -> void:
     var map_image := Image.create(192, 192, false, Image.FORMAT_RGBA8)
     for y in range(192):
@@ -997,6 +1013,9 @@ func _create_minimap(layer: CanvasLayer) -> void:
                 pixel_color = Color(0.10, 0.40, 0.58)
             map_image.set_pixel(x, y, pixel_color)
 
+    _paint_map_marker(map_image, village_well_position, Color(0.98, 0.79, 0.32), 3)
+    _paint_map_marker(map_image, river_pavilion_position, Color(0.30, 0.94, 0.80), 3)
+    _paint_map_marker(map_image, river_crossing_position, Color(0.92, 0.91, 0.76), 2)
     var map_texture := ImageTexture.create_from_image(map_image)
     minimap_panel = PanelContainer.new()
     minimap_panel.name = "WorldMinimap"
@@ -1423,7 +1442,8 @@ func _process(delta: float) -> void:
         var time_text := "%02d:%02d" % [hours, minutes]
         var prompt := _get_interaction_prompt()
         var note := status_note if status_note_time > 0.0 else prompt
-        hud_label.text = "WORLDS  •  %s  |  HP %d%%\nFood %d%%   Water %d%%   Rest %d%%\n%s" % [
+        var objective := _get_journey_objective()
+        hud_label.text = "WORLDS  •  %s  |  HP %d%%\nFood %d%%   Water %d%%   Rest %d%%\n%s\n%s" % [
             time_text,
             roundi(health),
             roundi(hunger),
@@ -1698,6 +1718,22 @@ func _update_survival(delta: float) -> void:
         rest = maxf(rest, 45.0)
         _show_status_note("You recovered at the campsite. Take supplies before leaving.")
         _save_game()
+
+func _get_journey_objective() -> String:
+    var cabin_owned := false
+    for building in placed_buildings:
+        if str(building.get("type", "")) == "cabin":
+            cabin_owned = true
+            break
+    if not cabin_owned:
+        if int(shared_inventory.get("wood", 0)) < 14:
+            return "JOURNEY  •  Gather %d more wood" % (14 - int(shared_inventory.get("wood", 0)))
+        if int(shared_inventory.get("stone", 0)) < 6:
+            return "JOURNEY  •  Gather %d more stone" % (6 - int(shared_inventory.get("stone", 0)))
+        if int(shared_inventory.get("fiber", 0)) < 6:
+            return "JOURNEY  •  Gather %d more fiber" % (6 - int(shared_inventory.get("fiber", 0)))
+        return "JOURNEY  •  Open BUILD and place your timber cabin"
+    return "JOURNEY  •  Explore the river crossing and meet the villagers"
 
 func _get_interaction_prompt() -> String:
     match _nearest_interaction():
@@ -2884,9 +2920,10 @@ func _create_riverfront_landmarks() -> void:
     var stone := _build_material(Color(0.43, 0.46, 0.43))
     var lantern_glow := _build_material(Color(1.0, 0.68, 0.30), true)
 
+    river_crossing_position = Vector3(river_x, deck_height, crossing_z)
     var bridge := Node3D.new()
     bridge.name = "Riverlight_Crossing"
-    bridge.position = Vector3(river_x, deck_height, crossing_z)
+    bridge.position = river_crossing_position
     add_child(bridge)
     _village_box(bridge, "Bridge_Deck", Vector3(28.0, 0.42, 5.2), Vector3(0.0, -0.21, 0.0), timber)
     for plank_index in range(18):
@@ -2926,6 +2963,7 @@ func _create_riverfront_landmarks() -> void:
     # An open timber pavilion gives the east bank a destination and a quiet resting place.
     var pavilion_x := east_bank_x + 10.0
     var pavilion_y := _height_at(pavilion_x, crossing_z)
+    river_pavilion_position = Vector3(pavilion_x, pavilion_y, crossing_z)
     var pavilion := Node3D.new()
     pavilion.name = "River_Whisper_Pavilion"
     pavilion.position = Vector3(pavilion_x, pavilion_y, crossing_z)
