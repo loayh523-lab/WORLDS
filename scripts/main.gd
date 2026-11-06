@@ -22,6 +22,9 @@ var world_environment: Environment
 var sky_material: ProceduralSkyMaterial
 var sun_light: DirectionalLight3D
 var world_clock := 8.0
+const SAVE_PATH := "user://worlds_save.cfg"
+var save_elapsed := 0.0
+var memory_crystal: MeshInstance3D
 var hunger := 100.0
 var thirst := 100.0
 var rest := 100.0
@@ -42,10 +45,14 @@ func _ready() -> void:
     _create_memory_stone()
     _create_player()
     _create_hud()
+    _load_game()
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
         pressed_actions.clear()
+        _save_game()
+    elif what == NOTIFICATION_WM_CLOSE_REQUEST:
+        _save_game()
 
 func _create_environment() -> void:
     var world_env := WorldEnvironment.new()
@@ -436,6 +443,9 @@ func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
 func _process(delta: float) -> void:
     _update_day_cycle(delta)
     _update_survival(delta)
+    save_elapsed += delta
+    if save_elapsed >= 15.0:
+        _save_game()
     if status_note_time > 0.0:
         status_note_time = max(0.0, status_note_time - delta)
     if hud_label and player:
@@ -674,24 +684,26 @@ func _create_memory_stone() -> void:
     stone.material_override = stone_material
     add_child(stone)
 
-    var crystal := MeshInstance3D.new()
+    memory_crystal = MeshInstance3D.new()
     var crystal_mesh := SphereMesh.new()
     crystal_mesh.radius = 0.22
     crystal_mesh.height = 0.52
-    crystal.mesh = crystal_mesh
-    crystal.position = memory_position + Vector3(0, 1.62, 0)
+    memory_crystal.mesh = crystal_mesh
+    memory_crystal.position = memory_position + Vector3(0, 1.62, 0)
     var crystal_material := StandardMaterial3D.new()
     crystal_material.albedo_color = Color(0.20, 0.72, 0.66)
     crystal_material.emission_enabled = true
     crystal_material.emission = Color(0.08, 0.48, 0.42)
     crystal_material.emission_energy_multiplier = 0.55
-    crystal.material_override = crystal_material
-    add_child(crystal)
+    memory_crystal.material_override = crystal_material
+    add_child(memory_crystal)
 
 func _awaken_world_memory() -> void:
     if memory_awakened:
         return
     memory_awakened = true
+    if is_instance_valid(memory_crystal):
+        memory_crystal.visible = false
 
     var trail_mesh := SphereMesh.new()
     trail_mesh.radius = 0.18
@@ -739,6 +751,63 @@ func _update_day_cycle(delta: float) -> void:
     sky_material.sky_horizon_color = Color(0.06, 0.08, 0.17).lerp(Color(0.72, 0.82, 0.86), daylight)
     sky_material.ground_bottom_color = Color(0.015, 0.025, 0.055).lerp(Color(0.12, 0.18, 0.15), daylight)
     sky_material.ground_horizon_color = Color(0.08, 0.11, 0.18).lerp(Color(0.48, 0.58, 0.48), daylight)
+
+
+func _save_game() -> void:
+    if not player:
+        return
+
+    var config := ConfigFile.new()
+    config.set_value("world", "clock", world_clock)
+    config.set_value("world", "memory_awakened", memory_awakened)
+    config.set_value("player", "hunger", hunger)
+    config.set_value("player", "thirst", thirst)
+    config.set_value("player", "rest", rest)
+    config.set_value("player", "position", player.global_position)
+
+    var bush_servings: Array[int] = []
+    for bush in berry_bushes:
+        bush_servings.append(int(bush["servings"]))
+    config.set_value("world", "berry_servings", bush_servings)
+
+    var save_error := config.save(SAVE_PATH)
+    if save_error == OK:
+        save_elapsed = 0.0
+    else:
+        push_warning("WORLDS could not save progress. Error code: %d" % save_error)
+
+
+func _load_game() -> void:
+    if not player:
+        return
+
+    var config := ConfigFile.new()
+    if config.load(SAVE_PATH) != OK:
+        return
+
+    world_clock = fposmod(float(config.get_value("world", "clock", world_clock)), 24.0)
+    hunger = clampf(float(config.get_value("player", "hunger", hunger)), 0.0, 100.0)
+    thirst = clampf(float(config.get_value("player", "thirst", thirst)), 0.0, 100.0)
+    rest = clampf(float(config.get_value("player", "rest", rest)), 0.0, 100.0)
+
+    var saved_position: Variant = config.get_value("player", "position", player.global_position)
+    if typeof(saved_position) == TYPE_VECTOR3:
+        var restored_position: Vector3 = saved_position
+        restored_position.x = clampf(restored_position.x, -WORLD_SIZE * 0.48, WORLD_SIZE * 0.48)
+        restored_position.z = clampf(restored_position.z, -WORLD_SIZE * 0.48, WORLD_SIZE * 0.48)
+        player.global_position = restored_position
+
+    var saved_servings: Variant = config.get_value("world", "berry_servings", [])
+    if saved_servings is Array:
+        for index in range(mini(saved_servings.size(), berry_bushes.size())):
+            var bush: Dictionary = berry_bushes[index]
+            bush["servings"] = clampi(int(saved_servings[index]), 0, 3)
+            berry_bushes[index] = bush
+
+    if bool(config.get_value("world", "memory_awakened", false)):
+        _awaken_world_memory()
+
+    save_elapsed = 0.0
 
 func _physics_process(delta: float) -> void:
     if not player or not camera:
