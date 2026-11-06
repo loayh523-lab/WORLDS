@@ -972,6 +972,14 @@ func _create_hud() -> void:
     _add_control_button("RUN", Vector2(screen_size.x * 0.75, screen_size.y * 0.86), "run", true)
     _add_control_button("JUMP", Vector2(screen_size.x * 0.88, screen_size.y * 0.86), "jump", true)
 
+    var menu_button := Button.new()
+    menu_button.name = "OpenMainMenu"
+    menu_button.text = "MENU"
+    menu_button.position = Vector2(maxf(16.0, screen_size.x - 112.0), 16.0)
+    menu_button.custom_minimum_size = Vector2(96.0, 42.0)
+    menu_button.pressed.connect(_return_to_main_menu)
+    layer.add_child(menu_button)
+
     _create_network_panel(layer)
     _create_settings_panel(layer)
     _create_build_panel(layer)
@@ -1086,6 +1094,9 @@ func _return_to_main_menu() -> void:
         network_panel.visible = false
     if main_menu_layer:
         main_menu_layer.visible = true
+
+func _is_frontend_visible() -> bool:
+    return (main_menu_layer != null and main_menu_layer.visible) or (network_panel != null and network_panel.visible) or (settings_panel != null and settings_panel.visible)
 
 func _create_survival_bar(parent: VBoxContainer, caption: String, initial_value: float) -> ProgressBar:
     var row := HBoxContainer.new()
@@ -1771,11 +1782,13 @@ func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
     )
 
 func _process(delta: float) -> void:
-    _update_day_cycle(delta)
+    var frontend_visible := _is_frontend_visible()
+    if not frontend_visible:
+        _update_day_cycle(delta)
+        _update_survival(delta)
     if cloud_layer:
         cloud_layer.rotation.y += delta * 0.0009
-    _update_survival(delta)
-    if player and not journey_visited_crossing:
+    if player and not frontend_visible and not journey_visited_crossing:
         var crossing_distance := Vector2(player.global_position.x - river_crossing_position.x, player.global_position.z - river_crossing_position.z).length()
         if crossing_distance <= 9.0:
             journey_visited_crossing = true
@@ -3823,6 +3836,10 @@ func _camera_relative_direction(input_vector: Vector2) -> Vector3:
     return (camera_right * input_vector.x - camera_forward * input_vector.y).normalized()
 
 func _physics_process(delta: float) -> void:
+    if _is_frontend_visible():
+        if player:
+            player.velocity = Vector3.ZERO
+        return
     if not player or not camera:
         return
 
