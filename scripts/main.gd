@@ -25,6 +25,10 @@ var mobile_controls: Control
 var world_environment: Environment
 var sky_material: ProceduralSkyMaterial
 var sun_light: DirectionalLight3D
+var tree_trunks: MultiMeshInstance3D
+var tree_canopies: MultiMeshInstance3D
+var total_tree_instances := 0
+var current_tree_density := 1.0
 var world_clock := 8.0
 var hunger := 100.0
 var thirst := 100.0
@@ -285,17 +289,18 @@ func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
         var crown_transform := Transform3D(crown_basis, tree_position + Vector3(0, 2.45 * tree_scale, 0))
         crown_multi.set_instance_transform(i, crown_transform)
 
-    var trunks := MultiMeshInstance3D.new()
-    trunks.name = "TreeTrunks"
-    trunks.multimesh = trunk_multi
-    trunks.material_override = bark
-    add_child(trunks)
+    tree_trunks = MultiMeshInstance3D.new()
+    tree_trunks.name = "TreeTrunks"
+    tree_trunks.multimesh = trunk_multi
+    tree_trunks.material_override = bark
+    add_child(tree_trunks)
 
-    var crowns := MultiMeshInstance3D.new()
-    crowns.name = "TreeCanopies"
-    crowns.multimesh = crown_multi
-    crowns.material_override = leaves
-    add_child(crowns)
+    tree_canopies = MultiMeshInstance3D.new()
+    tree_canopies.name = "TreeCanopies"
+    tree_canopies.multimesh = crown_multi
+    tree_canopies.material_override = leaves
+    add_child(tree_canopies)
+    total_tree_instances = tree_positions.size()
 
 func _create_player() -> void:
     player = CharacterBody3D.new()
@@ -977,7 +982,6 @@ func _create_memory_stone() -> void:
     crystal_material.albedo_color = Color(0.20, 0.72, 0.66)
     crystal_material.emission_enabled = true
     crystal_material.emission = Color(0.08, 0.48, 0.42)
-    crystal_material.emission = Color(0.08, 0.48, 0.42)
     crystal_material.emission_energy_multiplier = 0.55
     memory_crystal.material_override = crystal_material
     add_child(memory_crystal)
@@ -1280,13 +1284,13 @@ func _update_network(delta: float) -> void:
         _send_local_network_state()
 
 func _send_local_network_state() -> void:
-    if not lan_active or multiplayer.multiplayer_peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
+    if not lan_active:
         return
     if multiplayer.is_server():
-        var host_position := player.global_position
-        var host_facing := player.rotation.y
-        rpc("_rpc_apply_remote_player_state", 1, host_position, host_facing, world_clock)
-    else:
+        if multiplayer.get_peers().is_empty():
+            return
+        rpc("_rpc_apply_remote_player_state", 1, player.global_position, player.rotation.y, world_clock)
+    elif multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
         rpc_id(1, "_rpc_receive_player_state", player.global_position, player.rotation.y)
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -1301,6 +1305,12 @@ func _rpc_request_player_roster() -> void:
         var avatar: Node3D = network_remote_players[peer_id]
         if is_instance_valid(avatar):
             rpc_id(requester, "_rpc_spawn_remote_player", int(peer_id), avatar.global_position, avatar.rotation.y)
+    rpc_id(requester, "_rpc_set_shared_clock", world_clock)
+    for index in range(berry_bushes.size()):
+        var bush: Dictionary = berry_bushes[index]
+        rpc_id(requester, "_rpc_set_berry_servings", index, int(bush["servings"]))
+    if memory_awakened:
+        rpc_id(requester, "_rpc_world_memory_activated")
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_spawn_remote_player(peer_id: int, spawn_position: Vector3, facing: float) -> void:
@@ -1393,32 +1403,47 @@ func _on_quality_selected(index: int) -> void:
 
 func _apply_quality_preset(index: int) -> void:
     quality_index = index
-    var render_scale := 0.76
+    var density := 0.74
     var shadows := false
+    var fog_enabled := true
     match index:
-        0:
-            render_scale = 0.76
+        0: # Auto starts from a safe balanced profile; the adaptive loop tunes it.
+            density = 0.70 if OS.get_processor_count() <= 4 else 0.82
             shadows = false
-        1:
-            render_scale = 0.62
+            fog_enabled = true
+        1: # Low
+            density = 0.48
             shadows = false
-        2:
-            render_scale = 0.78
+            fog_enabled = false
+        2: # Balanced
+            density = 0.72
             shadows = false
-        3:
-            render_scale = 0.90
+            fog_enabled = true
+        3: # High
+            density = 0.90
             shadows = true
-        4:
-            render_scale = 1.0
+            fog_enabled = true
+        4: # Ultra
+            density = 1.0
             shadows = true
-    current_render_scale = render_scale
-    get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-    get_viewport().scaling_3d_scale = current_render_scale
+            fog_enabled = true
+
+    _set_tree_density(density)
     if sun_light:
         sun_light.shadow_enabled = shadows
     if world_environment:
-        world_environment.fog_enabled = index >= 2
-        world_environment.fog_density = 0.0022 if index <= 2 else 0.0028
+        world_environment.fog_enabled = fog_enabled
+        world_environment.fog_density = 0.0024 if fog_enabled else 0.0
+
+func _set_tree_density(density: float) -> void:
+    current_tree_density = clampf(density, 0.35, 1.0)
+    if total_tree_instances <= 0:
+        return
+    var visible_count := clampi(roundi(float(total_tree_instances) * current_tree_density), 1, total_tree_instances)
+    if tree_trunks and tree_trunks.multimesh:
+        tree_trunks.multimesh.visible_instance_count = visible_count
+    if tree_canopies and tree_canopies.multimesh:
+        tree_canopies.multimesh.visible_instance_count = visible_count
 
 func _on_fps_selected(index: int) -> void:
     current_fps_target = fps_option.get_item_id(index)
@@ -1435,17 +1460,23 @@ func _update_adaptive_quality(delta: float) -> void:
     adaptive_check_timer = 0.0
 
     var actual_fps := Engine.get_frames_per_second()
-    var new_scale := current_render_scale
+    var next_density := current_tree_density
     if actual_fps > 0 and actual_fps < float(current_fps_target) * 0.78:
-        new_scale = maxf(0.58, current_render_scale - 0.06)
+        next_density = maxf(0.40, current_tree_density - 0.08)
+        if sun_light:
+            sun_light.shadow_enabled = false
+        if world_environment:
+            world_environment.fog_enabled = false
     elif actual_fps >= float(current_fps_target) * 0.96:
-        new_scale = minf(0.92, current_render_scale + 0.025)
+        next_density = minf(0.90, current_tree_density + 0.025)
 
-    if not is_equal_approx(new_scale, current_render_scale):
-        current_render_scale = new_scale
-        get_viewport().scaling_3d_scale = current_render_scale
+    if not is_equal_approx(next_density, current_tree_density):
+        _set_tree_density(next_density)
     if fps_label:
-        fps_label.text = "Auto  •  %d FPS  •  Render %.2f" % [actual_fps, current_render_scale]
+        fps_label.text = "Auto  •  %d FPS  •  Trees %d%%" % [
+            actual_fps,
+            roundi(current_tree_density * 100.0)
+        ]
 
 func _button_down(action: String) -> bool:
     return pressed_actions.has(action)
