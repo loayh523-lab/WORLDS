@@ -583,6 +583,8 @@ func _input(event: InputEvent) -> void:
 func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
     if not camera or not camera_pivot:
         return
+    if network_panel and network_panel.get_global_rect().has_point(pointer_position):
+        return
 
     var screen_size := get_viewport().get_visible_rect().size
     # Keep the lower control area free for movement and jump buttons.
@@ -608,8 +610,10 @@ func _process(delta: float) -> void:
     if save_elapsed >= 15.0:
         _save_game()
     if status_note_time > 0.0:
-        status_note_time = max(0.0, status_note_time - delta)
-    if hud_label and player:
+        status_note_time = maxf(0.0, status_note_time - delta)
+    hud_refresh_timer += delta
+    if hud_refresh_timer >= 0.2 and hud_label and player:
+        hud_refresh_timer = 0.0
         var hours := int(world_clock)
         var minutes := int((world_clock - float(hours)) * 60.0)
         var time_text := "%02d:%02d" % [hours, minutes]
@@ -721,6 +725,10 @@ func _rpc_set_berry_servings(index: int, servings: int) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _rpc_set_shared_clock(new_clock: float) -> void:
     world_clock = fposmod(new_clock, 24.0)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_world_memory_activated() -> void:
+    _apply_world_memory()
 
 func _broadcast_shared_world_state() -> void:
     if not lan_active or not multiplayer.is_server():
