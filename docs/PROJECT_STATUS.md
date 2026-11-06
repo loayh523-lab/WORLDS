@@ -15,7 +15,8 @@ Last updated: 2026-11-06
 - Keyboard movement plus a two-finger-friendly virtual analog joystick for mobile movement; the right side remains available for camera drag.
 - Touch actions for interaction, sprint, and jump, with simultaneous-touch input.
 - Adjustable camera sensitivity and touch-button scale; drag-to-reposition action buttons, reset layout, and save the chosen layout locally.
-- Scrollable in-game performance/settings panel with live FPS and process-memory readout.
+- Scrollable in-game performance/settings panel with live FPS, frame-time (ms/frame), and process-memory readout.
+- Camera controls include adjustable sensitivity, follow distance, and field of view; touch buttons include adjustable size and opacity.
 - Smooth horizontal acceleration/deceleration and a sprint speed tier.
 - Basic day/night cycle and early survival interactions.
 - Local save/restore for player position, survival values, world time, berry servings, and World Memory.
