@@ -41,6 +41,11 @@ var hunger := 100.0
 var thirst := 100.0
 var rest := 100.0
 var berry_bushes: Array[Dictionary] = []
+var resource_nodes: Array[Dictionary] = []
+var shared_inventory: Dictionary = {"wood": 0, "stone": 0, "fiber": 0}
+var placed_buildings: Array[Dictionary] = []
+var inventory_label: Label
+var build_panel: PanelContainer
 var camp_position := Vector3.ZERO
 var memory_position := Vector3.ZERO
 var memory_awakened := false
@@ -113,6 +118,8 @@ func _ready() -> void:
     print("WORLDS_STAGE environment_details")
     _create_foraging_bushes()
     print("WORLDS_STAGE forage")
+    _create_resource_nodes()
+    print("WORLDS_STAGE resources")
     _create_campsite()
     print("WORLDS_STAGE campsite")
     _create_memory_stone()
@@ -698,11 +705,13 @@ func _create_hud() -> void:
     var screen_size := get_viewport().get_visible_rect().size
     _create_virtual_joystick(screen_size)
     _add_control_button("USE", Vector2(screen_size.x * 0.75, screen_size.y * 0.70), "interact", true)
+    _add_control_button("BUILD", Vector2(screen_size.x * 0.88, screen_size.y * 0.70), "build", true)
     _add_control_button("RUN", Vector2(screen_size.x * 0.75, screen_size.y * 0.86), "run", true)
     _add_control_button("JUMP", Vector2(screen_size.x * 0.88, screen_size.y * 0.86), "jump", true)
 
     _create_network_panel(layer)
     _create_settings_panel(layer)
+    _create_build_panel(layer)
 
 func _create_virtual_joystick(screen_size: Vector2) -> void:
     joystick_center = Vector2(screen_size.x * 0.16, screen_size.y * 0.79)
@@ -815,6 +824,7 @@ func _set_control_layout_edit(enabled: bool) -> void:
 func _reset_control_layout() -> void:
     var screen_size := get_viewport().get_visible_rect().size
     _move_action_button("interact", Vector2(screen_size.x * 0.75, screen_size.y * 0.70))
+    _move_action_button("build", Vector2(screen_size.x * 0.88, screen_size.y * 0.70))
     _move_action_button("run", Vector2(screen_size.x * 0.75, screen_size.y * 0.86))
     _move_action_button("jump", Vector2(screen_size.x * 0.88, screen_size.y * 0.86))
     _save_game()
@@ -823,6 +833,11 @@ func _reset_control_layout() -> void:
 
 func _on_control_pressed(action: String) -> void:
     if control_layout_edit_mode:
+        return
+    if action == "build":
+        if build_panel:
+            build_panel.visible = not build_panel.visible
+            _update_inventory_ui()
         return
     if action == "interact":
         _try_interact()
@@ -1059,13 +1074,13 @@ func _on_control_scale_changed(value: float) -> void:
         var caption: Label = action_captions[action]
         button.scale = Vector2.ONE * control_scale
         var shape := CircleShape2D.new()
-        shape.radius = 53.0 if str(action) in ["interact", "jump", "run"] else 47.0
+        shape.radius = 53.0 if str(action) in ["interact", "jump", "run", "build"] else 47.0
         button.shape = shape
         caption.position = button.position - Vector2(42.0, 20.0) * control_scale
         caption.size = Vector2(84.0, 40.0) * control_scale
     for action in action_captions:
         var caption: Label = action_captions[action]
-        caption.add_theme_font_size_override("font_size", roundi((14 if str(action) in ["interact", "jump", "run"] else 27) * control_scale))
+        caption.add_theme_font_size_override("font_size", roundi((14 if str(action) in ["interact", "jump", "run", "build"] else 27) * control_scale))
 
 func _finish_control_layout_edit() -> void:
     _set_control_layout_edit(false)
@@ -1442,6 +1457,153 @@ func _create_foraging_bushes() -> void:
             berry_material.roughness = 0.7
             berry.material_override = berry_material
             add_child(berry)
+
+func _create_resource_nodes() -> void:
+    var resource_layout := [
+        {"kind": "wood", "position": Vector2(31.0, -11.0), "amount": 4},
+        {"kind": "wood", "position": Vector2(-54.0, 32.0), "amount": 4},
+        {"kind": "wood", "position": Vector2(65.0, 46.0), "amount": 4},
+        {"kind": "wood", "position": Vector2(-82.0, -44.0), "amount": 4},
+        {"kind": "wood", "position": Vector2(102.0, -72.0), "amount": 4},
+        {"kind": "stone", "position": Vector2(40.0, -11.0), "amount": 4},
+        {"kind": "stone", "position": Vector2(78.0, 5.0), "amount": 4},
+        {"kind": "stone", "position": Vector2(-88.0, 16.0), "amount": 4},
+        {"kind": "stone", "position": Vector2(5.0, 93.0), "amount": 4},
+        {"kind": "stone", "position": Vector2(117.0, 111.0), "amount": 4},
+        {"kind": "fiber", "position": Vector2(16.0, 45.0), "amount": 5},
+        {"kind": "fiber", "position": Vector2(-28.0, 82.0), "amount": 5},
+        {"kind": "fiber", "position": Vector2(75.0, -93.0), "amount": 5},
+        {"kind": "fiber", "position": Vector2(-98.0, -8.0), "amount": 5},
+        {"kind": "fiber", "position": Vector2(111.0, 43.0), "amount": 5}
+    ]
+
+    for entry in resource_layout:
+        var kind: String = entry["kind"]
+        var point: Vector2 = entry["position"]
+        var ground_position := Vector3(point.x, _height_at(point.x, point.y), point.y)
+        var visual := Node3D.new()
+        visual.name = "Resource_%s_%02d" % [kind, resource_nodes.size()]
+        visual.position = ground_position
+        add_child(visual)
+
+        if kind == "wood":
+            var bark := StandardMaterial3D.new()
+            bark.albedo_color = Color(0.31, 0.19, 0.11)
+            bark.roughness = 1.0
+            for piece in range(3):
+                var log := MeshInstance3D.new()
+                var log_mesh := CylinderMesh.new()
+                log_mesh.top_radius = 0.17
+                log_mesh.bottom_radius = 0.17
+                log_mesh.height = 1.45
+                log.mesh = log_mesh
+                log.position = Vector3(0.0, 0.20 + float(piece) * 0.22, (float(piece) - 1.0) * 0.24)
+                log.rotation.z = PI * 0.5
+                log.material_override = bark
+                visual.add_child(log)
+        elif kind == "stone":
+            var stone_material := StandardMaterial3D.new()
+            stone_material.albedo_color = Color(0.40, 0.43, 0.42)
+            stone_material.roughness = 0.98
+            for piece in range(4):
+                var rock := MeshInstance3D.new()
+                var rock_mesh := SphereMesh.new()
+                rock_mesh.radius = 0.48
+                rock_mesh.height = 0.78
+                rock_mesh.radial_segments = 8
+                rock_mesh.rings = 4
+                rock.mesh = rock_mesh
+                rock.position = Vector3(cos(float(piece) * TAU / 4.0) * 0.36, 0.24, sin(float(piece) * TAU / 4.0) * 0.36)
+                rock.scale = Vector3(1.0 + float(piece % 2) * 0.25, 0.78, 0.9)
+                rock.material_override = stone_material
+                visual.add_child(rock)
+        else:
+            var fiber_material := StandardMaterial3D.new()
+            fiber_material.albedo_color = Color(0.19, 0.40, 0.15)
+            fiber_material.roughness = 1.0
+            for piece in range(5):
+                var stem := MeshInstance3D.new()
+                var stem_mesh := CapsuleMesh.new()
+                stem_mesh.radius = 0.10
+                stem_mesh.height = 0.85
+                stem.mesh = stem_mesh
+                stem.position = Vector3(cos(float(piece) * TAU / 5.0) * 0.30, 0.48, sin(float(piece) * TAU / 5.0) * 0.30)
+                stem.rotation.z = -0.28 if piece % 2 == 0 else 0.28
+                stem.material_override = fiber_material
+                visual.add_child(stem)
+
+        resource_nodes.append({
+            "kind": kind,
+            "position": ground_position,
+            "amount": int(entry["amount"]),
+            "visual": visual
+        })
+
+func _create_build_panel(layer: CanvasLayer) -> void:
+    var screen_size := get_viewport().get_visible_rect().size
+    build_panel = PanelContainer.new()
+    build_panel.name = "CraftAndBuildPanel"
+    build_panel.position = Vector2(screen_size.x * 0.32, screen_size.y * 0.24)
+    build_panel.custom_minimum_size = Vector2(420.0, 0.0)
+    build_panel.visible = false
+    layer.add_child(build_panel)
+
+    var column := VBoxContainer.new()
+    column.add_theme_constant_override("separation", 8)
+    build_panel.add_child(column)
+
+    var title := Label.new()
+    title.text = "FIELD CRAFTING  •  SHARED SUPPLIES"
+    title.add_theme_font_size_override("font_size", 18)
+    column.add_child(title)
+
+    inventory_label = Label.new()
+    inventory_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(inventory_label)
+
+    var hint := Label.new()
+    hint.text = "Collect nearby materials with USE, then place structures in front of you."
+    hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(hint)
+
+    var fire_button := Button.new()
+    fire_button.text = "PLACE CAMPFIRE  •  3 WOOD + 2 STONE"
+    fire_button.custom_minimum_size.y = 46.0
+    fire_button.pressed.connect(_request_build.bind("campfire"))
+    column.add_child(fire_button)
+
+    var crate_button := Button.new()
+    crate_button.text = "PLACE STORAGE CRATE  •  5 WOOD + 2 STONE"
+    crate_button.custom_minimum_size.y = 46.0
+    crate_button.pressed.connect(_request_build.bind("storage"))
+    column.add_child(crate_button)
+
+    var shelter_button := Button.new()
+    shelter_button.text = "PLACE WOOD SHELTER  •  12 WOOD + 6 FIBER + 4 STONE"
+    shelter_button.custom_minimum_size.y = 46.0
+    shelter_button.pressed.connect(_request_build.bind("shelter"))
+    column.add_child(shelter_button)
+
+    var close_button := Button.new()
+    close_button.text = "CLOSE"
+    close_button.pressed.connect(_toggle_build_panel.bind(false))
+    column.add_child(close_button)
+
+    _update_inventory_ui()
+
+func _toggle_build_panel(visible_state: bool) -> void:
+    if build_panel:
+        build_panel.visible = visible_state
+        if visible_state:
+            _update_inventory_ui()
+
+func _update_inventory_ui() -> void:
+    if inventory_label:
+        inventory_label.text = "WOOD  %d     STONE  %d     FIBER  %d" % [
+            int(shared_inventory.get("wood", 0)),
+            int(shared_inventory.get("stone", 0)),
+            int(shared_inventory.get("fiber", 0))
+        ]
 
 func _create_campsite() -> void:
     camp_position = Vector3(18.0, _height_at(18.0, 0.0), 0.0)
