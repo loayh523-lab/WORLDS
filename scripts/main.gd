@@ -178,6 +178,7 @@ func _ready() -> void:
             if remove_error != OK:
                 push_warning("Could not clear isolated smoke-test save: %d" % remove_error)
     _load_game()
+    network_player_names[1] = player_name
     _on_camera_distance_changed(camera_distance)
     _on_camera_fov_changed(camera_fov)
     _on_button_opacity_changed(button_opacity)
@@ -4447,6 +4448,9 @@ func _start_lan_smoke_host() -> void:
     get_tree().create_timer(12.0).timeout.connect(_finish_lan_smoke_host)
 
 func _start_lan_smoke_client() -> void:
+    player_name = "LAN Friend"
+    if player_name_input:
+        player_name_input.text = player_name
     address_input.text = "127.0.0.1"
     _join_lan_game()
     if not lan_active:
@@ -4467,13 +4471,14 @@ func _finish_lan_smoke_client() -> void:
     var inventory_synced := int(shared_inventory.get("wood", 0)) >= 1
     var resource_synced := resource_nodes.size() > 0 and int(resource_nodes[0]["amount"]) == 3
     var host_avatar_seen := network_remote_players.has(1)
+    var host_name_synced := str(network_player_names.get(1, "")).strip_edges() != ""
     print("LAN_SMOKE_CLIENT_STATE  •  connected %s  •  host avatar %s  •  wood %d  •  resource amount %d" % [
         str(lan_active and multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED),
         str(host_avatar_seen),
         int(shared_inventory.get("wood", 0)),
         int(resource_nodes[0]["amount"]) if resource_nodes.size() > 0 else -1
     ])
-    if lan_active and multiplayer.get_unique_id() > 1 and host_avatar_seen and inventory_synced and resource_synced:
+    if lan_active and multiplayer.get_unique_id() > 1 and host_avatar_seen and host_name_synced and inventory_synced and resource_synced:
         lan_smoke_client_passed = true
         print("LAN_SMOKE_CLIENT_PASS  •  shared gathering state synchronized")
     else:
@@ -4497,6 +4502,15 @@ func _finish_lan_smoke_host() -> void:
         get_tree().quit(1)
         return
     var remote_avatar: Node3D = network_remote_players[remote_id]
+    if str(network_player_names.get(remote_id, "")) != "LAN Friend":
+        push_error("LAN_SMOKE_HOST_FAIL: remote player display name did not synchronize")
+        get_tree().quit(1)
+        return
+    var remote_name_label := remote_avatar.find_child("PlayerNameLabel", true, false) as Label3D
+    if remote_name_label == null or remote_name_label.text != "LAN Friend":
+        push_error("LAN_SMOKE_HOST_FAIL: remote avatar name label did not update")
+        get_tree().quit(1)
+        return
     if int(shared_inventory.get("wood", 0)) < 1 or int(resource_nodes[0]["amount"]) != 3:
         push_error("LAN_SMOKE_HOST_FAIL: gathered resource was not applied by host")
         get_tree().quit(1)
