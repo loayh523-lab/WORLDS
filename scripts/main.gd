@@ -289,12 +289,35 @@ func _create_river() -> void:
     var water := MeshInstance3D.new()
     water.name = "River"
     water.mesh = river_mesh
-    var water_material := StandardMaterial3D.new()
-    water_material.albedo_color = Color(0.10, 0.42, 0.62, 0.88)
-    water_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-    water_material.roughness = 0.18
-    water_material.metallic = 0.12
-    water_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    var water_shader := Shader.new()
+    water_shader.code = """
+shader_type spatial;
+render_mode blend_mix, depth_draw_opaque, cull_disabled;
+
+uniform vec4 water_tint : source_color = vec4(0.05, 0.34, 0.52, 0.88);
+varying vec3 river_world_position;
+
+void vertex() {
+    vec3 world_vertex = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    river_world_position = world_vertex;
+    float long_wave = sin(world_vertex.x * 0.14 + TIME * 0.9) * 0.045;
+    float cross_wave = cos(world_vertex.z * 0.18 - TIME * 0.65) * 0.035;
+    VERTEX.y += long_wave + cross_wave;
+}
+
+void fragment() {
+    float ripple_a = sin(river_world_position.x * 0.23 + TIME * 1.05);
+    float ripple_b = cos(river_world_position.z * 0.17 - TIME * 0.8);
+    float ripple = (ripple_a * ripple_b + 1.0) * 0.5;
+    ALBEDO = water_tint.rgb * (0.84 + ripple * 0.22);
+    METALLIC = 0.08;
+    ROUGHNESS = 0.16;
+    SPECULAR = 0.78;
+    ALPHA = water_tint.a;
+}
+"""
+    var water_material := ShaderMaterial.new()
+    water_material.shader = water_shader
     water.mesh.surface_set_material(0, water_material)
     add_child(water)
 
