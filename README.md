@@ -13,7 +13,13 @@ The repository contains an early 3D playable-scene prototype:
 - Early survival interactions: drink from the river, gather wild berries, and rest at a campsite.
 - A first experiment with the **World Memory** idea: awaken a memory stone to reveal a glowing trail through the landscape.
 
-These systems are prototypes, not a finished game. The final character art, polished environments, animals, weather, deeper survival, building, persistent world changes, saves, and multiplayer are not implemented yet.
+These systems are prototypes, not a finished game. Final character art, polished environments, animals, weather, deeper survival, building, persistent world changes, saves, and multiplayer are not implemented yet.
+
+## Download a test build
+
+A 64-bit Android debug APK has been exported successfully by GitHub Actions. The build is for testing only and has not yet been verified on a physical Android device. The APK is generated with a temporary debug signing key and is not a release-store build.
+
+Open the [Android debug APK workflow](https://github.com/loayh523-lab/WORLDS/actions/workflows/android-apk.yml), select its latest successful run, and download the `WORLDS-android-debug` artifact.
 
 ## Open the project
 
@@ -30,10 +36,6 @@ These systems are prototypes, not a finished game. The final character art, poli
 
 ## Automated checks
 
-GitHub Actions runs a headless project import and a short main-scene smoke test on pushes and pull requests to `main`. A successful check confirms that the project imports and the scene starts in the CI environment. It does not prove performance or usability on a physical phone.
-
-## Android status
-
-No Android APK has been built or tested yet. Android export still needs to be configured and tested on the target device.
+GitHub Actions runs a headless project import and a short main-scene smoke test. A separate workflow installs Android build tools and matching Godot export templates, then exports a 64-bit debug APK. A successful CI run does not replace testing on a physical phone.
 
 See [Project Status](docs/PROJECT_STATUS.md) for implemented features and next milestones, and [Gameplay Vision (Arabic)](docs/GAMEPLAY_VISION_AR.md) for the evolving game identity.
