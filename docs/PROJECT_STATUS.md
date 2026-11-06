@@ -10,6 +10,7 @@ Last updated: 2026-11-06
 - Procedural rolling terrain with collision, river valley, and instanced forest.
 - Procedural playable terrain area expanded to 512 × 512 metres, with broader rolling hills and a wider winding river valley.
 - Instanced environmental detail: up to 750 varied broadleaf trees, 190 snow-zone pine trees, 4,200 grass instances, and 260 scattered rocks; quality presets scale their visible density together.
+- Added 260 instanced riverbank pebbles and 180 reed stems along both sides of the winding river to give the shoreline more natural detail without creating hundreds of separate scene nodes.
 - Early biome distinction: a green central valley, dry eastern dunes, and a colder northern mountain zone with snow coloring and pine trees. These are starter biome regions, not a finished multi-continent world.
 - Stylized placeholder character, walking animation, third-person follow camera.
 - Keyboard movement plus a two-finger-friendly virtual analog joystick for mobile movement; the right side remains available for camera drag.
@@ -58,7 +59,7 @@ Last updated: 2026-11-06
 2. Pass Android export with Internet permission and enforce the 700 MB APK ceiling.
 3. Install and test the build on two physical Android phones on the same Wi-Fi.
 4. Fix any touch, network, orientation, or startup failures found on device.
-5. Improve character art, terrain materials, trees, rocks, shoreline, and water.
+5. Continue improving character art, terrain materials, trees, rocks, shoreline, and water; the first instanced pebble and reed shoreline pass is now in place.
 6. Expand authoritative synchronization to all relevant player and world state.
 7. Add optional world-pack download and mounting, with explicit size and storage checks.
 8. Profile frame time, RAM, heat, and battery on representative low-, mid-, and high-tier Android devices.
