@@ -117,6 +117,9 @@ var layout_drag_action := ""
 var layout_touch_index := -1
 var action_buttons: Dictionary = {}
 var action_captions: Dictionary = {}
+var main_menu_layer: CanvasLayer
+var main_menu_panel: PanelContainer
+var settings_return_button: Button
 var settings_panel: PanelContainer
 var layout_status_label: Label
 var metrics_label: Label
@@ -971,6 +974,106 @@ func _create_hud() -> void:
     _create_settings_panel(layer)
     _create_build_panel(layer)
     _create_minimap(layer)
+    _create_main_menu()
+
+
+func _create_main_menu() -> void:
+    main_menu_layer = CanvasLayer.new()
+    main_menu_layer.name = "MainMenu"
+    main_menu_layer.layer = 20
+    add_child(main_menu_layer)
+
+    var backdrop := ColorRect.new()
+    backdrop.name = "MenuBackdrop"
+    backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+    backdrop.color = Color(0.025, 0.075, 0.065, 0.94)
+    backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+    main_menu_layer.add_child(backdrop)
+
+    var center := CenterContainer.new()
+    center.set_anchors_preset(Control.PRESET_FULL_RECT)
+    main_menu_layer.add_child(center)
+
+    main_menu_panel = PanelContainer.new()
+    main_menu_panel.custom_minimum_size = Vector2(390.0, 0.0)
+    center.add_child(main_menu_panel)
+
+    var column := VBoxContainer.new()
+    column.add_theme_constant_override("separation", 12)
+    column.alignment = BoxContainer.ALIGNMENT_CENTER
+    main_menu_panel.add_child(column)
+
+    var logo := TextureRect.new()
+    logo.texture = load("res://assets/worlds_logo.svg")
+    logo.custom_minimum_size = Vector2(330.0, 110.0)
+    logo.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+    logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    column.add_child(logo)
+
+    var tagline := Label.new()
+    tagline.text = "A WORLD TO DISCOVER"
+    tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    tagline.add_theme_color_override("font_color", Color(0.72, 0.84, 0.76))
+    tagline.add_theme_font_size_override("font_size", 13)
+    column.add_child(tagline)
+
+    var welcome := Label.new()
+    welcome.text = "Welcome, %s" % player_name
+    welcome.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    welcome.add_theme_font_size_override("font_size", 20)
+    column.add_child(welcome)
+
+    var start_button := Button.new()
+    start_button.text = "CONTINUE EXPLORING"
+    start_button.custom_minimum_size.y = 52
+    start_button.pressed.connect(_close_main_menu)
+    column.add_child(start_button)
+
+    var multiplayer_button := Button.new()
+    multiplayer_button.text = "PLAY WITH A FRIEND"
+    multiplayer_button.custom_minimum_size.y = 46
+    multiplayer_button.pressed.connect(_open_multiplayer_from_menu)
+    column.add_child(multiplayer_button)
+
+    var settings_button := Button.new()
+    settings_button.text = "SETTINGS"
+    settings_button.custom_minimum_size.y = 46
+    settings_button.pressed.connect(_open_settings_from_menu)
+    column.add_child(settings_button)
+
+    var hint := Label.new()
+    hint.text = "Your journey is saved automatically"
+    hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    hint.add_theme_color_override("font_color", Color(0.65, 0.73, 0.68))
+    hint.add_theme_font_size_override("font_size", 12)
+    column.add_child(hint)
+
+
+func _close_main_menu() -> void:
+    if main_menu_layer:
+        main_menu_layer.visible = false
+    if settings_panel:
+        settings_panel.visible = false
+    if network_panel:
+        network_panel.visible = false
+
+
+func _open_multiplayer_from_menu() -> void:
+    if main_menu_layer:
+        main_menu_layer.visible = false
+    if network_panel:
+        network_panel.visible = true
+    if settings_panel:
+        settings_panel.visible = false
+
+
+func _open_settings_from_menu() -> void:
+    if main_menu_layer:
+        main_menu_layer.visible = false
+    if settings_panel:
+        settings_panel.visible = true
+    if network_panel:
+        network_panel.visible = false
 
 func _create_survival_bar(parent: VBoxContainer, caption: String, initial_value: float) -> ProgressBar:
     var row := HBoxContainer.new()
@@ -1329,6 +1432,7 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     network_status_label.text = "Offline • Both phones must use the same Wi-Fi"
     network_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(network_status_label)
+    network_panel.visible = false
 
 func _apply_player_name() -> void:
     if not player_name_input:
@@ -1489,6 +1593,7 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     layout_status_label.text = "Move buttons and save your layout."
     layout_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(layout_status_label)
+    settings_panel.visible = false
 
 func _on_master_volume_changed(value: float) -> void:
     var safe_volume := clampf(value, 0.0, 1.0)
