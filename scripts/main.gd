@@ -4203,6 +4203,11 @@ func _start_gameplay_smoke_test() -> void:
         push_error("GAMEPLAY_SMOKE_FAIL: sprint button did not release")
         get_tree().quit(1)
         return
+    if main_menu_layer == null or not main_menu_layer.visible or network_panel == null or network_panel.visible or settings_panel == null or settings_panel.visible or LAN_MAX_CLIENTS != 7:
+        push_error("GAMEPLAY_SMOKE_FAIL: mobile menu, Wi-Fi panel defaults, or LAN capacity configuration is incorrect")
+        get_tree().quit(1)
+        return
+
     if resource_nodes.size() < 11 or wildlife_agents.size() < 27 or village_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null or survival_bars.size() != 4:
         push_error("GAMEPLAY_SMOKE_FAIL: resources or crafting interface missing")
         get_tree().quit(1)
