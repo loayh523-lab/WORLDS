@@ -2,46 +2,56 @@
 
 Last updated: 2026-11-06
 
-## Current milestone: first 3D playable slice
+## Current milestone: Android co-op gameplay prototype
 
-### Implemented in the repository
-- Godot 4 project configuration and a main 3D scene.
-- Procedural rolling terrain with a collision surface.
-- A winding river valley and a small deterministic forest using MultiMesh instances.
-- A stylized humanoid placeholder character with a basic walk cycle.
-- A separate orbit camera; camera drag and character-facing movement.
-- Keyboard movement and jump.
-- On-screen touch controls for movement, jump, and interaction.
-- A basic day/night lighting and sky-color cycle (20 real minutes per in-game day).
-- Early survival interactions: drink near the river, gather limited wild berries, and rest at the campsite to advance time to morning.
-- First World Memory experiment: interact with the memory stone to reveal a glowing trail across the landscape.
-- GitHub Actions headless import and scene smoke test.
-- Successful Android debug APK export on GitHub Actions for arm64-v8a. The APK was generated with Godot 4.3 export templates and a temporary debug signing key.
+### Implemented in the current development branch
+- Godot 4 project using the GL Compatibility renderer.
+- Landscape mobile orientation and keep-screen-on setting.
+- Procedural rolling terrain with collision, river valley, and instanced forest.
+- Stylized placeholder character, walking animation, third-person follow camera.
+- Keyboard and touch movement; gameplay buttons use TouchScreenButton to support simultaneous touches.
+- Camera dragging and interaction.
+- Basic day/night cycle and early survival interactions.
+- Local save/restore for player position, survival values, world time, berry servings, and World Memory.
+- Experimental LAN host/join flow for two phones on the same Wi-Fi.
+- Position/facing synchronization, remote player placeholders, disconnect handling, and initial shared world interaction synchronization.
+- Android Internet permission for ENet/UDP LAN traffic.
+- Quality profiles and 20–120 FPS caps; Auto adjusts tree density, shadows, and fog based on observed frame rate.
 
-### Not implemented or not yet verified
-- Final character models, polished animations, customization, and production-quality art.
-- Detailed terrain materials, grass, rocks, water effects, and multiple finished biomes.
-- Animals, fish, weather, seasons, and deeper environmental simulation.
-- Full survival balance, inventory, crafting, building, and permanent player structures.
-- Persistent, shared world-memory effects and the complete progression design.
-- Save/load, accounts, matchmaking, LAN, and online multiplayer.
-- Physical-device installation, touch usability, frame-rate, thermal, and memory testing. The APK is a CI build, not a phone-verified release.
+### Not implemented or not verified yet
+- Successful two-physical-phone LAN test and router compatibility.
+- Reconnection, host migration, session recovery, and robust packet-loss behavior.
+- Full authoritative multiplayer for all inventory, survival, building, and world changes.
+- Player identities, accounts, chat, invitations, moderation, and online matchmaking.
+- Final character models, polished animation, audio, and production environment art.
+- Animals, weather, seasons, multiple completed biomes, crafting, and non-grid building.
+- Downloadable world packs and an in-game content library.
+- Physical-device performance, thermal, RAM, and battery profiling across low/mid/high devices.
+- Production signing and a release APK.
+
+## Size and performance targets
+
+- Initial Android installation must remain below 700 MB.
+- Optional downloadable worlds remain separate from the base installation; total optional content target is up to 2 GB after user selection.
+- FPS caps are configurable at 20, 30, 45, 60, 90, and 120. Actual FPS depends on the device and cannot be guaranteed by a cap.
+- Low, Balanced, High, Ultra, and adaptive quality modes are available in the prototype. These need device validation.
 
 ## Next milestones
 
-1. **Device validation:** install the debug APK on Android; check launch, touch layout, camera feel, and performance on the target phone.
-2. **World presentation:** improve terrain materials, shoreline, vegetation variety, trees, rocks, and the first distinct secondary area.
-3. **Core loop:** make exploration lead to meaningful decisions and discoveries rather than repetitive resource collection.
-4. **World Memory:** test a small loop in which a player's meaningful action changes a place and leaves a trace that can guide or help later visitors. The current glowing trail is only a visual proof of concept.
-5. **Living world:** add a few animal behaviors and weather changes, then assess performance before scaling up.
-6. **Survival and construction:** balance food, water, rest, inventory, and intuitive non-grid building so these support exploration instead of becoming chores.
-7. **Multiplayer design:** prototype LAN and online architecture only after the single-player slice is stable.
-8. **Android release path:** configure a permanent release identity and signing process only when the game is ready for release.
+1. Pass the Godot import and scene smoke test for the LAN branch.
+2. Pass Android export with Internet permission and enforce the 700 MB APK ceiling.
+3. Install and test the build on two physical Android phones on the same Wi-Fi.
+4. Fix any touch, network, orientation, or startup failures found on device.
+5. Improve character art, terrain materials, trees, rocks, shoreline, and water.
+6. Expand authoritative synchronization to all relevant player and world state.
+7. Add optional world-pack download and mounting, with explicit size and storage checks.
+8. Profile frame time, RAM, heat, and battery on representative low-, mid-, and high-tier Android devices.
+9. Only then prepare a final test build for the user.
 
 ## Development rules
 
-- Android is the first target; touch input and performance matter from the start.
-- Keep the presentation natural and fully 3D, not voxel or pixel-art.
-- Prefer a small number of polished, testable systems over many unfinished menus.
-- A passing CI smoke test or exported APK is not the same as a real-device test.
-- Do not label the project multiplayer-ready or release-ready until those parts exist and are verified.
+- Do not call LAN complete until two actual phones have connected and interacted successfully.
+- Do not promise 20–120 FPS on every device; expose caps and adaptive quality, then measure.
+- Keep the initial installation below 700 MB; optional worlds must be separately downloaded and consented to.
+- CI export is not a substitute for launch and gameplay testing on real phones.
+- No public test APK is the final deliverable until the complete playtest milestone is ready.
