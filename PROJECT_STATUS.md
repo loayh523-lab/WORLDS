@@ -11,6 +11,7 @@ Last updated: 2026-11-06
 - Third-person player, mobile joystick, multitouch camera drag, sprint, jump, interaction and editable touch-button layout.
 - Starter village, simple NPCs and wildlife, gathering, survival needs, crafting/building, World Memory discovery and local autosave.
 - Main menu and project logo, saved player name, in-game menu shortcut, responsive menu sizing, settings and navigation.
+- Four selectable explorer outfit color styles (Forest Scout, River Wanderer, Amber Trail, Midnight Pine), saved locally and synchronized to other LAN players.
 - Quality presets, FPS caps, camera controls, touch sizing/opacity, master volume and performance readout.
 - Direct Wi-Fi LAN host/join using ENet/UDP port 24560. The host displays and can copy its local IP.
 - Player movement and display names plus basic shared resources/building state synchronize.
