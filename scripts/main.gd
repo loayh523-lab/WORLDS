@@ -45,6 +45,7 @@ var rest := 100.0
 var berry_bushes: Array[Dictionary] = []
 var resource_nodes: Array[Dictionary] = []
 var wildlife_agents: Array[Dictionary] = []
+var village_agents: Array[Dictionary] = []
 var wildlife_rng := RandomNumberGenerator.new()
 var shared_inventory: Dictionary = {"wood": 0, "stone": 0, "fiber": 0}
 var placed_buildings: Array[Dictionary] = []
@@ -138,6 +139,8 @@ func _ready() -> void:
     print("WORLDS_STAGE resources")
     _create_wildlife()
     print("WORLDS_STAGE wildlife")
+    _create_village()
+    print("WORLDS_STAGE village")
     _create_campsite()
     print("WORLDS_STAGE campsite")
     _create_memory_stone()
@@ -1375,6 +1378,7 @@ func _process(delta: float) -> void:
     _update_remote_players(delta)
     _update_build_preview()
     _update_wildlife(delta)
+    _update_village_agents(delta)
     _update_adaptive_quality(delta)
     metrics_refresh_timer += delta
     if minimap_marker and player:
@@ -2301,6 +2305,161 @@ func _create_wildlife() -> void:
             "speed": wildlife_rng.randf_range(0.9, 1.35)
         })
 
+func _village_box(parent: Node3D, node_name: String, size: Vector3, position: Vector3, material: Material) -> MeshInstance3D:
+    var node := MeshInstance3D.new()
+    node.name = node_name
+    var mesh := BoxMesh.new()
+    mesh.size = size
+    node.mesh = mesh
+    node.position = position
+    node.material_override = material
+    parent.add_child(node)
+    return node
+
+func _create_village() -> void:
+    # A small settlement on the west bank, with a clear pedestrian lane and varied homes.
+    var village_center := Vector3(-82.0, 0.0, 76.0)
+    var ground := _height_at(village_center.x, village_center.z)
+    var path_material := StandardMaterial3D.new()
+    path_material.albedo_color = Color(0.42, 0.35, 0.24)
+    path_material.roughness = 1.0
+    var wall_materials: Array[StandardMaterial3D] = []
+    for tint in [Color(0.68, 0.53, 0.37), Color(0.58, 0.43, 0.31), Color(0.72, 0.65, 0.48)]:
+        var material := StandardMaterial3D.new()
+        material.albedo_color = tint
+        material.roughness = 0.94
+        wall_materials.append(material)
+    var roof_material := StandardMaterial3D.new()
+    roof_material.albedo_color = Color(0.24, 0.19, 0.16)
+    roof_material.roughness = 0.9
+    var wood_material := StandardMaterial3D.new()
+    wood_material.albedo_color = Color(0.25, 0.16, 0.10)
+    wood_material.roughness = 0.98
+    var glass_material := StandardMaterial3D.new()
+    glass_material.albedo_color = Color(0.24, 0.43, 0.48, 0.78)
+    glass_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    glass_material.roughness = 0.22
+
+    var road := _village_box(self, "Village_Dirt_Lane", Vector3(7.0, 0.12, 58.0), Vector3(village_center.x, ground + 0.04, village_center.z), path_material)
+    road.rotation.y = 0.08
+    var house_offsets := [
+        Vector3(-13.0, 0.0, -15.0), Vector3(12.0, 0.0, -12.0),
+        Vector3(-15.0, 0.0, 7.0), Vector3(13.0, 0.0, 10.0),
+        Vector3(-2.0, 0.0, 25.0)
+    ]
+    for index in range(house_offsets.size()):
+        var offset: Vector3 = house_offsets[index]
+        var x := village_center.x + offset.x
+        var z := village_center.z + offset.z
+        var base_y := _height_at(x, z)
+        var house := Node3D.new()
+        house.name = "Village_Home_%02d" % (index + 1)
+        house.position = Vector3(x, base_y, z)
+        add_child(house)
+        var wall := _village_box(house, "Plastered_Walls", Vector3(8.0, 4.1, 7.0), Vector3(0.0, 2.05, 0.0), wall_materials[index % wall_materials.size()])
+        var roof_left := _village_box(house, "Roof_Left", Vector3(4.7, 0.28, 7.8), Vector3(-2.0, 4.25, 0.0), roof_material)
+        roof_left.rotation.z = -0.48
+        var roof_right := _village_box(house, "Roof_Right", Vector3(4.7, 0.28, 7.8), Vector3(2.0, 4.25, 0.0), roof_material)
+        roof_right.rotation.z = 0.48
+        _village_box(house, "Front_Door", Vector3(1.25, 2.25, 0.14), Vector3(0.0, 1.12, -3.58), wood_material)
+        for side in [-1.0, 1.0]:
+            _village_box(house, "Window", Vector3(1.15, 1.05, 0.12), Vector3(side * 2.35, 2.35, -3.59), glass_material)
+        var chimney := _village_box(house, "Chimney", Vector3(0.75, 1.7, 0.75), Vector3(2.3, 4.8, 1.6), wall_materials[1])
+        chimney.rotation.y = 0.15
+
+    for lamp_index in range(4):
+        var lamp_x := village_center.x + ( -1.0 if lamp_index % 2 == 0 else 1.0) * 5.5
+        var lamp_z := village_center.z - 22.0 + float(lamp_index) * 15.0
+        var pole := _village_box(self, "Village_Lamp_Post", Vector3(0.16, 3.4, 0.16), Vector3(lamp_x, _height_at(lamp_x, lamp_z) + 1.7, lamp_z), wood_material)
+        var glow := StandardMaterial3D.new()
+        glow.albedo_color = Color(1.0, 0.73, 0.38)
+        glow.emission_enabled = true
+        glow.emission = Color(1.0, 0.55, 0.2)
+        glow.emission_energy_multiplier = 1.2
+        var lantern := _village_box(self, "Warm_Lantern", Vector3(0.42, 0.48, 0.42), pole.position + Vector3(0.0, 1.72, 0.0), glow)
+
+    var clothing_colors := [Color(0.25, 0.36, 0.48), Color(0.55, 0.29, 0.18), Color(0.36, 0.43, 0.25), Color(0.54, 0.48, 0.34), Color(0.30, 0.27, 0.38), Color(0.62, 0.42, 0.25), Color(0.24, 0.42, 0.40), Color(0.48, 0.32, 0.29)]
+    var skin_material := StandardMaterial3D.new()
+    skin_material.albedo_color = Color(0.66, 0.46, 0.33)
+    skin_material.roughness = 0.9
+    var npc_rng := RandomNumberGenerator.new()
+    npc_rng.seed = 20261112
+    for index in range(8):
+        var npc := Node3D.new()
+        npc.name = "Villager_%02d" % (index + 1)
+        var x := village_center.x + npc_rng.randf_range(-13.0, 13.0)
+        var z := village_center.z + npc_rng.randf_range(-24.0, 25.0)
+        npc.position = Vector3(x, _height_at(x, z), z)
+        add_child(npc)
+        var outfit := StandardMaterial3D.new()
+        outfit.albedo_color = clothing_colors[index]
+        outfit.roughness = 0.95
+        var torso := MeshInstance3D.new()
+        var torso_mesh := CapsuleMesh.new()
+        torso_mesh.radius = 0.32
+        torso_mesh.height = 1.05
+        torso.mesh = torso_mesh
+        torso.position.y = 1.05
+        torso.material_override = outfit
+        npc.add_child(torso)
+        var head := MeshInstance3D.new()
+        var head_mesh := SphereMesh.new()
+        head_mesh.radius = 0.23
+        head_mesh.height = 0.44
+        head.mesh = head_mesh
+        head.position.y = 1.78
+        head.material_override = skin_material
+        npc.add_child(head)
+        for side in [-1.0, 1.0]:
+            var arm := MeshInstance3D.new()
+            var arm_mesh := CapsuleMesh.new()
+            arm_mesh.radius = 0.095
+            arm_mesh.height = 0.72
+            arm.mesh = arm_mesh
+            arm.position = Vector3(side * 0.39, 1.08, 0.0)
+            arm.rotation.z = side * -0.12
+            arm.material_override = outfit
+            npc.add_child(arm)
+            var leg := MeshInstance3D.new()
+            var leg_mesh := CapsuleMesh.new()
+            leg_mesh.radius = 0.12
+            leg_mesh.height = 0.78
+            leg.mesh = leg_mesh
+            leg.position = Vector3(side * 0.16, 0.39, 0.0)
+            leg.material_override = wood_material
+            npc.add_child(leg)
+        village_agents.append({
+            "root": npc,
+            "home": npc.position,
+            "target": npc.position,
+            "timer": npc_rng.randf_range(1.0, 4.0),
+            "speed": npc_rng.randf_range(0.65, 1.05),
+            "phase": npc_rng.randf_range(0.0, TAU)
+        })
+
+func _update_village_agents(delta: float) -> void:
+    for index in range(village_agents.size()):
+        var villager: Dictionary = village_agents[index]
+        var root: Node3D = villager["root"]
+        if not is_instance_valid(root):
+            continue
+        var home: Vector3 = villager["home"]
+        var target: Vector3 = villager["target"]
+        var timer := float(villager["timer"]) - delta
+        if timer <= 0.0 or Vector2(root.position.x - target.x, root.position.z - target.z).length() < 0.55:
+            var angle := randf() * TAU
+            var distance := randf_range(1.5, 7.0)
+            target = home + Vector3(cos(angle) * distance, 0.0, sin(angle) * distance)
+            timer = randf_range(2.0, 6.0)
+        var direction := Vector3(target.x - root.position.x, 0.0, target.z - root.position.z)
+        if direction.length() > 0.12:
+            root.position += direction.normalized() * float(villager["speed"]) * delta
+            root.rotation.y = lerp_angle(root.rotation.y, atan2(-direction.x, -direction.z), minf(1.0, delta * 3.0))
+        root.position.y = lerpf(root.position.y, _height_at(root.position.x, root.position.z), minf(1.0, delta * 8.0))
+        villager["target"] = target
+        villager["timer"] = timer
+        village_agents[index] = villager
+
 func _constrain_wildlife_target(target: Vector3, origin: Vector3) -> Vector3:
     # Deer remain in the temperate valley and do not deliberately route through deep water.
     target.x = clampf(target.x, -135.0, 135.0)
@@ -2824,7 +2983,7 @@ func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facin
 
 
 func _start_gameplay_smoke_test() -> void:
-    if resource_nodes.size() < 11 or wildlife_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null:
+    if resource_nodes.size() < 11 or wildlife_agents.size() < 8 or village_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null:
         push_error("GAMEPLAY_SMOKE_FAIL: resources or crafting interface missing")
         get_tree().quit(1)
         return
