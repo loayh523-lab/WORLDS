@@ -1018,6 +1018,7 @@ func _create_main_menu() -> void:
     column.add_child(tagline)
 
     var welcome := Label.new()
+    welcome.name = "MenuWelcome"
     welcome.text = "Welcome, %s" % player_name
     welcome.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     welcome.add_theme_font_size_override("font_size", 20)
@@ -4486,6 +4487,10 @@ func _load_game() -> void:
         player_name = "Wanderer"
     if player_name_input:
         player_name_input.text = player_name
+    if main_menu_layer:
+        var menu_welcome := main_menu_layer.find_child("MenuWelcome", true, false) as Label
+        if menu_welcome:
+            menu_welcome.text = "Welcome, %s" % player_name
     quality_index = clampi(int(config.get_value("settings", "quality_index", quality_index)), 0, 4)
     current_fps_target = clampi(int(config.get_value("settings", "fps_target", current_fps_target)), 20, 120)
     var allowed_fps := [20, 30, 45, 60, 90, 120]
