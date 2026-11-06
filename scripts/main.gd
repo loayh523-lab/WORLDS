@@ -13,6 +13,10 @@ var camera: Camera3D
 var pressed_actions: Dictionary = {}
 var hud_label: Label
 var mobile_controls: Control
+var world_environment: Environment
+var sky_material: ProceduralSkyMaterial
+var sun_light: DirectionalLight3D
+var world_clock := 8.0
 
 func _ready() -> void:
     _create_environment()
@@ -28,31 +32,31 @@ func _notification(what: int) -> void:
 
 func _create_environment() -> void:
     var world_env := WorldEnvironment.new()
-    var environment := Environment.new()
-    environment.background_mode = Environment.BG_SKY
+    world_environment = Environment.new()
+    world_environment.background_mode = Environment.BG_SKY
 
     var sky := Sky.new()
-    var sky_material := ProceduralSkyMaterial.new()
+    sky_material = ProceduralSkyMaterial.new()
     sky_material.sky_top_color = Color(0.16, 0.35, 0.56)
     sky_material.sky_horizon_color = Color(0.72, 0.82, 0.86)
     sky_material.ground_bottom_color = Color(0.12, 0.18, 0.15)
     sky_material.ground_horizon_color = Color(0.48, 0.58, 0.48)
     sky.sky_material = sky_material
-    environment.sky = sky
-    environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    environment.ambient_light_color = Color(0.72, 0.82, 0.92)
-    environment.ambient_light_energy = 0.65
-    environment.fog_enabled = true
-    environment.fog_light_color = Color(0.61, 0.72, 0.70)
-    environment.fog_density = 0.0025
-    world_env.environment = environment
+    world_environment.sky = sky
+    world_environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+    world_environment.ambient_light_color = Color(0.72, 0.82, 0.92)
+    world_environment.ambient_light_energy = 0.65
+    world_environment.fog_enabled = true
+    world_environment.fog_light_color = Color(0.61, 0.72, 0.70)
+    world_environment.fog_density = 0.0025
+    world_env.environment = world_environment
     add_child(world_env)
 
-    var sun := DirectionalLight3D.new()
-    sun.rotation_degrees = Vector3(-48, -32, 0)
-    sun.light_energy = 1.05
-    sun.shadow_enabled = true
-    add_child(sun)
+    sun_light = DirectionalLight3D.new()
+    sun_light.rotation_degrees = Vector3(-48, -32, 0)
+    sun_light.light_energy = 1.05
+    sun_light.shadow_enabled = true
+    add_child(sun_light)
 
 func _height_at(x: float, z: float) -> float:
     var hills := sin(x * 0.055) * 1.7 + cos(z * 0.047) * 1.5
@@ -347,12 +351,38 @@ func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
         deg_to_rad(-5.0)
     )
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+    _update_day_cycle(delta)
     if hud_label and player:
-        hud_label.text = "WORLDS  •  PROTOTYPE\nPosition: %d, %d" % [
+        var hours := int(world_clock)
+        var minutes := int((world_clock - float(hours)) * 60.0)
+        var time_text := "%02d:%02d" % [hours, minutes]
+        hud_label.text = "WORLDS  •  PROTOTYPE\nWorld time: %s   •   Position: %d, %d" % [
+            time_text,
             roundi(player.position.x),
             roundi(player.position.z)
         ]
+
+func _update_day_cycle(delta: float) -> void:
+    if not sun_light or not world_environment or not sky_material:
+        return
+
+    # One full in-game day lasts 20 real minutes.
+    world_clock = fposmod(world_clock + delta * 24.0 / 1200.0, 24.0)
+    var daylight := clamp(sin((world_clock - 6.0) / 12.0 * PI), 0.0, 1.0)
+    var day_sky := Color(0.16, 0.35, 0.56)
+    var night_sky := Color(0.012, 0.025, 0.075)
+
+    sun_light.rotation_degrees = Vector3(lerp(15.0, -195.0, world_clock / 24.0), -32.0, 0.0)
+    sun_light.light_energy = lerp(0.025, 1.05, daylight)
+    sun_light.light_color = Color(0.42, 0.52, 0.82).lerp(Color(1.0, 0.91, 0.76), daylight)
+
+    world_environment.ambient_light_energy = lerp(0.18, 0.65, daylight)
+    world_environment.fog_light_color = Color(0.10, 0.14, 0.25).lerp(Color(0.61, 0.72, 0.70), daylight)
+    sky_material.sky_top_color = night_sky.lerp(day_sky, daylight)
+    sky_material.sky_horizon_color = Color(0.06, 0.08, 0.17).lerp(Color(0.72, 0.82, 0.86), daylight)
+    sky_material.ground_bottom_color = Color(0.015, 0.025, 0.055).lerp(Color(0.12, 0.18, 0.15), daylight)
+    sky_material.ground_horizon_color = Color(0.08, 0.11, 0.18).lerp(Color(0.48, 0.58, 0.48), daylight)
 
 func _physics_process(delta: float) -> void:
     if not player or not camera:
