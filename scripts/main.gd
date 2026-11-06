@@ -4538,8 +4538,13 @@ func _start_gameplay_smoke_test() -> void:
     var saved_inventory: Variant = saved.get_value("world", "shared_inventory", {})
     var saved_buildings: Variant = saved.get_value("world", "placed_buildings", [])
     var saved_stamina: float = float(saved.get_value("player", "stamina", -1.0))
+    var saved_outfit: int = int(saved.get_value("player", "outfit_index", -1))
     var saved_crossing: bool = bool(saved.get_value("world", "journey_visited_crossing", false))
     var saved_villager: bool = bool(saved.get_value("world", "journey_met_villager", false))
+    if saved_outfit != 2:
+        push_error("GAMEPLAY_SMOKE_FAIL: selected explorer outfit was not persisted")
+        get_tree().quit(1)
+        return
     if not is_equal_approx(saved_stamina, 61.25):
         push_error("GAMEPLAY_SMOKE_FAIL: sprint stamina was not persisted")
         get_tree().quit(1)
@@ -4589,6 +4594,7 @@ func _start_lan_smoke_client() -> void:
     player_name = "LAN Friend"
     if player_name_input:
         player_name_input.text = player_name
+    _on_outfit_selected(3)
     address_input.text = "127.0.0.1"
     _join_lan_game()
     if not lan_active:
@@ -4642,6 +4648,15 @@ func _finish_lan_smoke_host() -> void:
     var remote_avatar: Node3D = network_remote_players[remote_id]
     if str(network_player_names.get(remote_id, "")) != "LAN Friend":
         push_error("LAN_SMOKE_HOST_FAIL: remote player display name did not synchronize")
+        get_tree().quit(1)
+        return
+    if int(network_player_outfits.get(remote_id, -1)) != 3:
+        push_error("LAN_SMOKE_HOST_FAIL: explorer outfit did not synchronize")
+        get_tree().quit(1)
+        return
+    var remote_body := remote_avatar.find_child("RemoteBody", true, false) as MeshInstance3D
+    if remote_body == null or remote_body.material_override == null or not is_equal_approx((remote_body.material_override as StandardMaterial3D).albedo_color.b, _get_player_outfit_color(3).b):
+        push_error("LAN_SMOKE_HOST_FAIL: remote avatar outfit color was not applied")
         get_tree().quit(1)
         return
     var remote_name_label := remote_avatar.find_child("PlayerNameLabel", true, false) as Label3D
