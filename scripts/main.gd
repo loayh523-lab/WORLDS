@@ -327,7 +327,7 @@ func _create_pine_forest() -> void:
     trunk_mesh.top_radius = 0.10
     trunk_mesh.bottom_radius = 0.19
     trunk_mesh.height = 1.8
-    var canopy_mesh := ConeMesh.new()
+    var canopy_mesh := CylinderMesh.new()
     canopy_mesh.top_radius = 0.035
     canopy_mesh.bottom_radius = 1.0
     canopy_mesh.height = 3.7
