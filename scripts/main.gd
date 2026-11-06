@@ -21,6 +21,7 @@ var right_leg: MeshInstance3D
 var gait_time := 0.0
 var pressed_actions: Dictionary = {}
 var hud_label: Label
+var health_bar: ProgressBar
 var mobile_controls: Control
 var world_environment: Environment
 var sky_material: ProceduralSkyMaterial
@@ -37,6 +38,7 @@ var total_grass_instances := 0
 var total_rock_instances := 0
 var current_tree_density := 1.0
 var world_clock := 8.0
+var health := 100.0
 var hunger := 100.0
 var thirst := 100.0
 var rest := 100.0
@@ -694,15 +696,28 @@ func _create_hud() -> void:
 
     var panel := PanelContainer.new()
     panel.position = Vector2(18, 18)
-    panel.custom_minimum_size = Vector2(290, 94)
+    panel.custom_minimum_size = Vector2(300, 120)
     layer.add_child(panel)
+
+    var hud_column := VBoxContainer.new()
+    hud_column.add_theme_constant_override("separation", 3)
+    panel.add_child(hud_column)
 
     hud_label = Label.new()
     hud_label.text = "WORLDS  •  CONNECTING WORLD"
     hud_label.add_theme_color_override("font_color", Color(0.92, 0.95, 0.88))
     hud_label.add_theme_font_size_override("font_size", 16)
     hud_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    panel.add_child(hud_label)
+    hud_column.add_child(hud_label)
+
+    health_bar = ProgressBar.new()
+    health_bar.name = "HealthBar"
+    health_bar.min_value = 0.0
+    health_bar.max_value = 100.0
+    health_bar.value = health
+    health_bar.show_percentage = false
+    health_bar.custom_minimum_size.y = 12.0
+    hud_column.add_child(health_bar)
 
     mobile_controls = Control.new()
     mobile_controls.name = "TouchLabels"
@@ -1301,13 +1316,16 @@ func _process(delta: float) -> void:
         var time_text := "%02d:%02d" % [hours, minutes]
         var prompt := _get_interaction_prompt()
         var note := status_note if status_note_time > 0.0 else prompt
-        hud_label.text = "WORLDS  •  PROTOTYPE  |  %s\nFood %d%%   Water %d%%   Rest %d%%\n%s" % [
+        hud_label.text = "WORLDS  •  %s  |  HP %d%%\nFood %d%%   Water %d%%   Rest %d%%\n%s" % [
             time_text,
+            roundi(health),
             roundi(hunger),
             roundi(thirst),
             roundi(rest),
             note
         ]
+        if health_bar:
+            health_bar.value = health
 
 
 func _nearest_interaction_for(position: Vector3) -> Dictionary:
@@ -1398,14 +1416,17 @@ func _rpc_apply_personal_interaction(action: String) -> void:
     match action:
         "drink":
             thirst = minf(100.0, thirst + 42.0)
+            health = minf(100.0, health + 3.0)
             _show_status_note("You drank water from the river.")
         "forage":
             hunger = minf(100.0, hunger + 34.0)
+            health = minf(100.0, health + 4.0)
             _show_status_note("You gathered wild berries.")
         "sleep":
             rest = 100.0
             hunger = maxf(0.0, hunger - 7.0)
             thirst = maxf(0.0, thirst - 10.0)
+            health = minf(100.0, health + 12.0)
             _show_status_note("You rested at the campsite.")
         _:
             _show_status_note("Nothing nearby to use.")
@@ -1497,9 +1518,24 @@ func _broadcast_shared_world_state() -> void:
 
 func _update_survival(delta: float) -> void:
     # Needs decline slowly so exploration stays relaxed rather than punishing.
-    hunger = max(0.0, hunger - delta * 0.012)
-    thirst = max(0.0, thirst - delta * 0.022)
-    rest = max(0.0, rest - delta * 0.016)
+    hunger = maxf(0.0, hunger - delta * 0.012)
+    thirst = maxf(0.0, thirst - delta * 0.022)
+    rest = maxf(0.0, rest - delta * 0.016)
+
+    if hunger <= 0.0 or thirst <= 0.0:
+        health = maxf(0.0, health - delta * 0.18)
+    elif hunger >= 80.0 and thirst >= 80.0 and rest >= 45.0:
+        health = minf(100.0, health + delta * 0.08)
+
+    if health <= 0.0 and player:
+        player.global_position = camp_position + Vector3(0.0, 1.3, 0.0)
+        player.velocity = Vector3.ZERO
+        health = 65.0
+        hunger = maxf(hunger, 55.0)
+        thirst = maxf(thirst, 55.0)
+        rest = maxf(rest, 45.0)
+        _show_status_note("You recovered at the campsite. Take supplies before leaving.")
+        _save_game()
 
 func _get_interaction_prompt() -> String:
     match _nearest_interaction():
@@ -1535,7 +1571,8 @@ func _try_interact() -> void:
 
     match _nearest_interaction():
         "drink":
-            thirst = min(100.0, thirst + 42.0)
+            thirst = minf(100.0, thirst + 42.0)
+            health = minf(100.0, health + 3.0)
             _show_status_note("You drank fresh water.")
         "gather":
             var nearest_resource := _nearest_interaction_for(player.global_position)
@@ -1559,13 +1596,15 @@ func _try_interact() -> void:
                 var selected: Dictionary = berry_bushes[nearest_index]
                 selected["servings"] = int(selected["servings"]) - 1
                 berry_bushes[nearest_index] = selected
-                hunger = min(100.0, hunger + 34.0)
+                hunger = minf(100.0, hunger + 34.0)
+                health = minf(100.0, health + 4.0)
                 _show_status_note("You gathered and ate wild berries.")
         "sleep":
             world_clock = 7.0
             rest = 100.0
-            hunger = max(0.0, hunger - 7.0)
-            thirst = max(0.0, thirst - 10.0)
+            hunger = maxf(0.0, hunger - 7.0)
+            thirst = maxf(0.0, thirst - 10.0)
+            health = minf(100.0, health + 12.0)
             _show_status_note("You rested at the campsite until morning.")
         "memory":
             _awaken_world_memory()
@@ -2412,7 +2451,7 @@ func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facin
 
 
 func _start_gameplay_smoke_test() -> void:
-    if resource_nodes.size() < 11 or build_panel == null:
+    if resource_nodes.size() < 11 or build_panel == null or minimap_panel == null or minimap_marker == null:
         push_error("GAMEPLAY_SMOKE_FAIL: resources or crafting interface missing")
         get_tree().quit(1)
         return
@@ -2562,6 +2601,7 @@ func _save_game() -> void:
     var config := ConfigFile.new()
     config.set_value("world", "clock", world_clock)
     config.set_value("world", "memory_awakened", memory_awakened)
+    config.set_value("player", "health", health)
     config.set_value("player", "hunger", hunger)
     config.set_value("player", "thirst", thirst)
     config.set_value("player", "rest", rest)
@@ -2601,8 +2641,11 @@ func _load_game() -> void:
         return
 
     world_clock = fposmod(float(config.get_value("world", "clock", world_clock)), 24.0)
+    health = clampf(float(config.get_value("player", "health", health)), 0.0, 100.0)
     hunger = clampf(float(config.get_value("player", "hunger", hunger)), 0.0, 100.0)
     thirst = clampf(float(config.get_value("player", "thirst", thirst)), 0.0, 100.0)
+    if health_bar:
+        health_bar.value = health
     rest = clampf(float(config.get_value("player", "rest", rest)), 0.0, 100.0)
     camera_sensitivity = clampf(float(config.get_value("controls", "camera_sensitivity", camera_sensitivity)), 0.003, 0.012)
     camera_distance = clampf(float(config.get_value("controls", "camera_distance", camera_distance)), 4.0, 12.0)
