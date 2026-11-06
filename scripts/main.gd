@@ -2304,6 +2304,78 @@ func _create_wildlife() -> void:
             "timer": wildlife_rng.randf_range(1.0, 4.0),
             "speed": wildlife_rng.randf_range(0.9, 1.35)
         })
+    _create_small_wildlife("Rabbit", 8, Color(0.55, 0.45, 0.35), 0.55, 1.35)
+    _create_small_wildlife("Fox", 5, Color(0.65, 0.27, 0.10), 0.82, 1.75)
+    _create_small_wildlife("Boar", 4, Color(0.25, 0.19, 0.15), 0.95, 1.05)
+
+func _create_small_wildlife(species: String, count: int, coat_color: Color, size_scale: float, move_speed: float) -> void:
+    for index in range(count):
+        var x := wildlife_rng.randf_range(-112.0, 112.0)
+        var z := wildlife_rng.randf_range(-130.0, 130.0)
+        if absf(x - sin(z * 0.018) * 18.0) < 16.0:
+            x += 25.0 if x < 0.0 else -25.0
+        var root := Node3D.new()
+        root.name = "%s_%02d" % [species, index + 1]
+        root.position = Vector3(x, _height_at(x, z), z)
+        add_child(root)
+        var coat := StandardMaterial3D.new()
+        coat.albedo_color = coat_color.lerp(Color(0.75, 0.62, 0.45), wildlife_rng.randf() * 0.16)
+        coat.roughness = 0.98
+        var dark := StandardMaterial3D.new()
+        dark.albedo_color = coat_color.darkened(0.35)
+        dark.roughness = 1.0
+        var body := MeshInstance3D.new()
+        var body_mesh := SphereMesh.new()
+        body_mesh.radius = 0.52 * size_scale
+        body_mesh.height = 0.75 * size_scale
+        body.mesh = body_mesh
+        body.position.y = 0.55 * size_scale
+        body.scale = Vector3(1.0, 0.78, 1.38)
+        body.material_override = coat
+        root.add_child(body)
+        var head := MeshInstance3D.new()
+        var head_mesh := SphereMesh.new()
+        head_mesh.radius = 0.27 * size_scale
+        head_mesh.height = 0.42 * size_scale
+        head.mesh = head_mesh
+        head.position = Vector3(0.0, 0.72 * size_scale, -0.48 * size_scale)
+        head.material_override = coat
+        root.add_child(head)
+        for side in [-1.0, 1.0]:
+            var ear := MeshInstance3D.new()
+            var ear_mesh := CapsuleMesh.new()
+            ear_mesh.radius = (0.055 if species == "Rabbit" else 0.075) * size_scale
+            ear_mesh.height = (0.48 if species == "Rabbit" else 0.22) * size_scale
+            ear.mesh = ear_mesh
+            ear.position = Vector3(side * 0.16 * size_scale, 1.03 * size_scale, -0.48 * size_scale)
+            ear.rotation.z = side * 0.16
+            ear.material_override = dark
+            root.add_child(ear)
+        for leg_x in [-0.25, 0.25]:
+            for leg_z in [-0.36, 0.34]:
+                var leg := MeshInstance3D.new()
+                var leg_mesh := CylinderMesh.new()
+                leg_mesh.top_radius = 0.045 * size_scale
+                leg_mesh.bottom_radius = 0.065 * size_scale
+                leg_mesh.height = 0.38 * size_scale
+                leg.mesh = leg_mesh
+                leg.position = Vector3(leg_x * size_scale, 0.20 * size_scale, leg_z * size_scale)
+                leg.material_override = dark
+                root.add_child(leg)
+        var tail := MeshInstance3D.new()
+        var tail_mesh := SphereMesh.new()
+        tail_mesh.radius = (0.16 if species == "Fox" else 0.10) * size_scale
+        tail_mesh.height = 0.28 * size_scale
+        tail.mesh = tail_mesh
+        tail.position = Vector3(0.0, 0.65 * size_scale, 0.58 * size_scale)
+        tail.material_override = dark if species != "Fox" else coat
+        root.add_child(tail)
+        wildlife_agents.append({
+            "root": root,
+            "target": root.position,
+            "timer": wildlife_rng.randf_range(1.0, 4.0),
+            "speed": move_speed * wildlife_rng.randf_range(0.8, 1.2)
+        })
 
 func _village_box(parent: Node3D, node_name: String, size: Vector3, position: Vector3, material: Material) -> MeshInstance3D:
     var node := MeshInstance3D.new()
