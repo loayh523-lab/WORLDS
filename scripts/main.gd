@@ -1860,7 +1860,9 @@ func _get_journey_objective() -> String:
         return "JOURNEY  •  Find the river crossing"
     if not journey_met_villager:
         return "JOURNEY  •  Talk to a villager"
-    return "JOURNEY  •  Explore freely"
+    if not memory_awakened:
+        return "JOURNEY  •  Find the ancient memory stone"
+    return "JOURNEY  •  Follow the glowing memory trail"
 
 func _get_interaction_prompt() -> String:
     match _nearest_interaction():
