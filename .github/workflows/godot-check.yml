@@ -50,7 +50,22 @@ jobs:
             exit 1
           fi
 
-      - name: Exercise LAN host and client processes
+      - name: Exercise gathering, crafting, building, and persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          GAMEPLAY_LOG="$RUNNER_TEMP/worlds-gameplay.log"
+          if ! godot --headless --path . -- --gameplay-smoke >"$GAMEPLAY_LOG" 2>&1; then
+            cat "$GAMEPLAY_LOG"
+            exit 1
+          fi
+          cat "$GAMEPLAY_LOG"
+          grep -q "GAMEPLAY_SMOKE_PASS" "$GAMEPLAY_LOG"
+          if grep -E "SCRIPT ERROR:|Parse Error:|Failed to load script|GAMEPLAY_SMOKE_FAIL" "$GAMEPLAY_LOG"; then
+            exit 1
+          fi
+
+      - name: Exercise LAN host, client, and shared resource collection
         shell: bash
         run: |
           set -euo pipefail
@@ -98,3 +113,4 @@ jobs:
           cat "$CLIENT_LOG"
           grep -q "LAN_SMOKE_HOST_PASS" "$HOST_LOG"
           grep -q "LAN_SMOKE_CLIENT_PASS" "$CLIENT_LOG"
+          grep -q "LAN_SMOKE_CLIENT_REQUESTED_GATHER" "$CLIENT_LOG"
