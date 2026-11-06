@@ -12,9 +12,13 @@ An original open-world adventure project built with Godot 4, targeting Android f
 - World Memory experiment: awaken a stone to reveal a glowing trail.
 - Local autosave for position, survival values, world time, berries, and memory activation.
 - Experimental two-phone LAN co-op: one device hosts and one joins over the same Wi-Fi; player positions and basic shared world interactions synchronize through ENet/UDP.
+- A starter village with a well, small market, NPC dialogue, a timber river crossing, a riverside pavilion, and a marked valley overlook.
+- A buildable timber cabin with a simple interior and rest interaction; a journey objective guides the first gathering/building loop.
+- Live food, water, rest, and sprint-energy indicators; sprint stamina persists in the local save.
+- A 512 × 512 metre starter map divided into four 256-metre terrain tiles, with map markers for key landmarks. Dynamic streaming and the planned 4 × 4 km world are not implemented yet.
 - Quality presets and selectable frame-rate caps, with an adaptive low-cost profile.
 
-This is still a development prototype. It is not a finished or store-ready game. The LAN path needs testing on two physical phones, and the character, environment, interaction design, and survival systems still need substantial work.
+This is still a development prototype, not a finished or store-ready game. Automated Godot gameplay and LAN checks pass, but two physical phones still need to be tested together. The current world is only 512 × 512 metres; the planned 4 × 4 km streamed world, final character/environment art, deeper NPC and animal behaviour, sound, and physical-device performance validation remain unfinished. The 60 FPS target on a Helio G99 has not been measured on a real device.
 
 ## LAN co-op test
 
