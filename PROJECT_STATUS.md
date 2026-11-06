@@ -2,34 +2,35 @@
 
 Last updated: 2026-11-06
 
-## Current milestone: Android-first playable prototype
+## Current milestone: Android Wi-Fi co-op playtest build
 
 ### Implemented
-- Godot 4.3 project using the GL Compatibility renderer for broad Android support.
-- 512 × 512 metre procedural starter region, split into four 256m terrain tiles (not the planned 4 × 4 km streamed world).
-- River valley, forests, grass, rocks, shoreline details, day/night lighting, sky and simple drifting clouds.
-- Third-person player, mobile virtual joystick, multitouch camera drag, sprint, jump, interact, and editable touch-button layout.
-- Starter village, simple NPCs, wildlife, gathering, berries, survival needs, crafting/building, World Memory discovery, and local autosave.
-- Main menu with project logo, player name, continue, Wi-Fi co-op, and settings.
-- Quality presets, FPS caps, camera controls, touch sizing/opacity, master volume, and live performance readout.
-- Direct Wi-Fi LAN host/join using ENet/UDP port 24560.
-- LAN session capacity configured for 1 host + up to 7 guests. Player names are synchronized; basic player movement and shared world state are replicated.
-- Wi-Fi host IP display and copy control.
+- Godot 4.3 project using the GL Compatibility renderer for Android.
+- 512 × 512 metre procedural starter region split into four terrain tiles. The planned 4 × 4 km streamed world is not implemented.
+- River valley, forest, grass, rocks, shoreline details, day/night lighting, sky and simple drifting clouds.
+- Third-person player, mobile joystick, multitouch camera drag, sprint, jump, interaction and editable touch-button layout.
+- Starter village, simple NPCs and wildlife, gathering, survival needs, crafting/building, World Memory discovery and local autosave.
+- Main menu and project logo, saved player name, in-game menu shortcut, responsive menu sizing, settings and navigation.
+- Quality presets, FPS caps, camera controls, touch sizing/opacity, master volume and performance readout.
+- Direct Wi-Fi LAN host/join using ENet/UDP port 24560. The host displays and can copy its local IP.
+- Player movement and display names plus basic shared resources/building state synchronize.
+- Session capacity is configured for 1 host + up to 7 guests; the current automated multiplayer smoke test exercises one host and one guest.
 
-### Current Wi-Fi test flow
-1. Both Android phones join the same Wi-Fi network.
-2. First phone: Play with a Friend → Create World → Copy Host IP.
-3. Second phone: Play with a Friend → enter IP → Join World.
-4. Both enter the same locally hosted session.
+### Latest validation
+- Latest source commit tested: `16201742fc4b5d2223cb4c4321e606d1ff1f7d46`.
+- Godot 4.3 import/parse, main-scene, gameplay, persistence, LAN host/client, movement, shared gathering and player-name checks: **passed** in GitHub Actions run [42244508777](https://github.com/loayh523-lab/WORLDS/actions/runs/42244508777).
+- Android debug APK export: **passed** in GitHub Actions run [42244508907](https://github.com/loayh523-lab/WORLDS/actions/runs/42244508907).
+- Debug APK size: 24,288,864 bytes (about 23.2 MiB).
+- The APK was structurally checked as a valid Android package. It has not been installed or physically tested on an Android phone.
 
-### Not complete / not verified
-- The 4 × 4 km world and dynamic chunk streaming.
-- Final production-quality character, animal, village, and environment art.
-- Deeper NPC schedules, expanded wildlife/ecology, weather, seasons, and audio.
-- Full inventory/item-use progression and persistent hosted worlds.
-- Public server browser, internet matchmaking, accounts, and dedicated online servers (explicitly deferred).
-- Real two-phone Wi-Fi testing, device-specific performance/thermal profiling, and final release signing.
-- Latest menu/LAN changes still require fresh Godot and Android CI validation before an APK can be shared.
+### Still not complete / not verified
+- The planned 4 × 4 km world and dynamic chunk streaming.
+- Final production-quality character, animal, village and environment art.
+- Deeper NPC schedules, expanded wildlife/ecology, weather, seasons, audio and fuller gameplay progression.
+- Persistent hosted worlds and robust reconnect/session recovery.
+- Public server browser, internet matchmaking, accounts and dedicated online servers are deferred; current scope is Wi-Fi LAN only.
+- Real two-phone Wi-Fi testing and device-specific performance, thermal, battery and touch profiling.
+- Final release signing and store-ready release build.
 
-## Build honesty
-Previous CI runs passed for earlier commits, including gameplay/LAN smoke checks and Android debug export. Those results do not validate the latest commits. No physical two-phone test has been performed. The project remains a prototype and the current map is 512 × 512 metres.
+## Test APK
+A debug test APK was generated from the latest tested source commit. It is a prototype for installation/playtesting, not a finished or store-ready release. The host phone must remain in the game during a Wi-Fi session; closing the host ends the session.
