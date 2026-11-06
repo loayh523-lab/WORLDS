@@ -4082,8 +4082,13 @@ func _start_gameplay_smoke_test() -> void:
         get_tree().quit(1)
         return
     journey_met_villager = true
-    if not _get_journey_objective().contains("freely"):
-        push_error("GAMEPLAY_SMOKE_FAIL: meeting a villager did not complete the starter journey")
+    if not _get_journey_objective().contains("memory stone"):
+        push_error("GAMEPLAY_SMOKE_FAIL: meeting a villager did not reveal the memory objective")
+        get_tree().quit(1)
+        return
+    memory_awakened = true
+    if not _get_journey_objective().contains("glowing memory trail"):
+        push_error("GAMEPLAY_SMOKE_FAIL: awakening memory did not reveal the trail objective")
         get_tree().quit(1)
         return
 
