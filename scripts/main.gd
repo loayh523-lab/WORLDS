@@ -1551,12 +1551,6 @@ func _rpc_apply_personal_interaction(action: String) -> void:
             thirst = maxf(0.0, thirst - 5.0)
             health = minf(100.0, health + 12.0)
             _show_status_note("You slept safely in your cabin.")
-        "home":
-            rest = 100.0
-            hunger = maxf(0.0, hunger - 4.0)
-            thirst = maxf(0.0, thirst - 5.0)
-            health = minf(100.0, health + 12.0)
-            _show_status_note("You slept safely in your cabin.")
         _:
             _show_status_note("Nothing nearby to use.")
 
@@ -1737,13 +1731,6 @@ func _try_interact() -> void:
             thirst = maxf(0.0, thirst - 10.0)
             health = minf(100.0, health + 12.0)
             _show_status_note("You rested at the campsite until morning.")
-        "home":
-            world_clock = 7.0
-            rest = 100.0
-            hunger = maxf(0.0, hunger - 4.0)
-            thirst = maxf(0.0, thirst - 5.0)
-            health = minf(100.0, health + 12.0)
-            _show_status_note("You slept safely in your cabin. A new morning begins.")
         "home":
             world_clock = 7.0
             rest = 100.0
@@ -1968,7 +1955,7 @@ func _spawn_building_visual(build_type: String, position: Vector3, facing: float
             var cabin_roof := _build_material(Color(0.20, 0.17, 0.15))
             var cabin_glass := _build_material(Color(0.24, 0.48, 0.54))
             cabin_glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-            cabin_glass.albedo_color.a = 0.78
+            cabin_glass.albedo_color = Color(0.24, 0.48, 0.54, 0.78)
             _village_box(root, "Cabin_Floor", Vector3(6.2, 0.16, 6.2), Vector3(0.0, 0.08, 0.0), cabin_trim)
             _village_box(root, "Cabin_Back_Wall", Vector3(6.0, 4.0, 0.28), Vector3(0.0, 2.0, 2.88), cabin_wall)
             _village_box(root, "Cabin_Left_Wall", Vector3(0.28, 4.0, 6.0), Vector3(-2.88, 2.0, 0.0), cabin_wall)
@@ -2206,13 +2193,6 @@ func _create_build_panel(layer: CanvasLayer) -> void:
 
     var cabin_button := Button.new()
     cabin_button.text = "BUILD TIMBER CABIN  •  14 WOOD + 6 STONE + 6 FIBER"
-    cabin_button.custom_minimum_size.y = 48.0
-    cabin_button.pressed.connect(_request_build.bind("cabin"))
-    column.add_child(cabin_button)
-    build_recipe_buttons["cabin"] = cabin_button
-
-    var cabin_button := Button.new()
-    cabin_button.text = "BUILD A TIMBER CABIN  •  14 WOOD + 6 STONE + 6 FIBER"
     cabin_button.custom_minimum_size.y = 48.0
     cabin_button.pressed.connect(_request_build.bind("cabin"))
     column.add_child(cabin_button)
