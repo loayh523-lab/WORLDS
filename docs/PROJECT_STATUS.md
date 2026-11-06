@@ -30,6 +30,7 @@ Last updated: 2026-11-06
 - Automated gameplay smoke test verifies resource collection, material costs, placement, and save-file persistence.
 - Automated LAN smoke test verifies player movement and that a guest gathering a resource updates the host and guest shared state.
 - Experimental LAN host/join flow for two phones on the same Wi-Fi.
+- Deer roaming and flee destinations are constrained to the temperate valley and steered to remain on their current riverbank; gameplay smoke checks cover habitat bounds and river-crossing regression.
 - Position/facing synchronization, remote player placeholders, disconnect handling, and initial shared world interaction synchronization.
 - Android Internet permission for ENet/UDP LAN traffic.
 - Quality profiles and 20–120 FPS caps; Auto adjusts tree density, shadows, and fog based on observed frame rate.
