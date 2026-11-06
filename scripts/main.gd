@@ -284,20 +284,48 @@ func _create_cloud_layer() -> void:
     cloud_layer.extra_cull_margin = 180.0
     add_child(cloud_layer)
 
+func _terrain_hash(grid_x: int, grid_z: int) -> float:
+    var value := sin(float(grid_x) * 127.1 + float(grid_z) * 311.7) * 43758.5453
+    return value - floorf(value)
+
+func _terrain_noise(x: float, z: float) -> float:
+    var grid_x := floori(x)
+    var grid_z := floori(z)
+    var blend_x := x - floorf(x)
+    var blend_z := z - floorf(z)
+    blend_x = blend_x * blend_x * (3.0 - 2.0 * blend_x)
+    blend_z = blend_z * blend_z * (3.0 - 2.0 * blend_z)
+    var top := lerpf(_terrain_hash(grid_x, grid_z), _terrain_hash(grid_x + 1, grid_z), blend_x)
+    var bottom := lerpf(_terrain_hash(grid_x, grid_z + 1), _terrain_hash(grid_x + 1, grid_z + 1), blend_x)
+    return lerpf(top, bottom, blend_z)
+
 func _height_at(x: float, z: float) -> float:
+    var broad_noise := _terrain_noise(x * 0.0062, z * 0.0062)
+    var medium_noise := _terrain_noise(x * 0.021, z * 0.021)
+    var fine_noise := _terrain_noise(x * 0.065, z * 0.065)
+    var landform_variation := (broad_noise - 0.5) * 8.0
+    landform_variation += (medium_noise - 0.5) * 3.8
+    landform_variation += (fine_noise - 0.5) * 0.9
+
     var broad_hills := sin(x * 0.013) * 6.5 + cos(z * 0.011) * 7.0
-    broad_hills += sin((x + z) * 0.008) * 5.0
+    broad_hills += sin((x + z) * 0.008) * 5.0 + landform_variation
+
     var desert_weight := clampf((x - 125.0) / 105.0, 0.0, 1.0)
     var dunes := sin(x * 0.031 + cos(z * 0.022) * 1.8) * 1.25 + cos(z * 0.038) * 0.75
+    dunes += (broad_noise - 0.5) * 1.8 + (fine_noise - 0.5) * 0.55
     broad_hills = lerpf(broad_hills, dunes, desert_weight)
+
     var snow_weight := clampf((-z - 125.0) / 100.0, 0.0, 1.0)
     var alpine := sin(x * 0.018) * 8.0 + cos(z * 0.021) * 6.0
-    alpine += maxf(0.0, sin((x + z) * 0.028)) * 15.0
+    var broken_ridge := 1.0 - absf(_terrain_noise(x * 0.014 + 37.0, z * 0.014 - 19.0) * 2.0 - 1.0)
+    alpine += pow(broken_ridge, 2.2) * 15.0
+    alpine += landform_variation * 1.35
     broad_hills = lerpf(broad_hills, alpine, snow_weight)
+
     var ridge_wave := maxf(0.0, sin((x - z) * 0.021 + cos(z * 0.009)))
     var ridges := ridge_wave * ridge_wave * lerpf(8.5, 3.0, desert_weight)
     var river_bank: float = absf(x - sin(z * 0.018) * 18.0)
-    var valley: float = -maxf(0.0, 1.0 - river_bank / 26.0) * 2.8
+    var valley: float = -maxf(0.0, 1.0 - river_bank / 35.0) * 4.2
     var upland := maxf(0.0, sin(x * 0.004 + z * 0.006)) * 4.0
     return broad_hills + ridges + upland + valley
 
