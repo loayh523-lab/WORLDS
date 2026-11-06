@@ -3927,8 +3927,8 @@ func _start_gameplay_smoke_test() -> void:
         push_error("GAMEPLAY_SMOKE_FAIL: cabin did not expose its rest interaction")
         get_tree().quit(1)
         return
-    if not _get_journey_objective().contains("Explore"):
-        push_error("GAMEPLAY_SMOKE_FAIL: journey objective did not advance after building a cabin")
+    if not _get_journey_objective().contains("crossing"):
+        push_error("GAMEPLAY_SMOKE_FAIL: journey objective did not advance to the river crossing after building a cabin")
         get_tree().quit(1)
         return
 
