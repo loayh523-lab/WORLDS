@@ -2,38 +2,34 @@
 
 Last updated: 2026-11-06
 
-## Current milestone: first 3D prototype
+## Current milestone: Android-first playable prototype
 
-### Implemented in the repository
-- Godot 4 project configuration using the mobile-friendly GL Compatibility renderer.
-- Main 3D scene.
-- Procedural rolling green terrain with collision.
-- A winding river mesh.
-- A small forest rendered with MultiMesh instances.
-- Placeholder third-person player capsule and follow camera.
-- Keyboard movement and jump.
-- On-screen touch buttons with press/release handling.
-- Touch camera drag in the upper-right screen area.
-- Basic day/night lighting and sky-color cycle.
-- GitHub Actions workflow for headless Godot import and a short scene smoke test.
+### Implemented
+- Godot 4.3 project using the GL Compatibility renderer for broad Android support.
+- 512 × 512 metre procedural starter region, split into four 256m terrain tiles (not the planned 4 × 4 km streamed world).
+- River valley, forests, grass, rocks, shoreline details, day/night lighting, sky and simple drifting clouds.
+- Third-person player, mobile virtual joystick, multitouch camera drag, sprint, jump, interact, and editable touch-button layout.
+- Starter village, simple NPCs, wildlife, gathering, berries, survival needs, crafting/building, World Memory discovery, and local autosave.
+- Main menu with project logo, player name, continue, Wi-Fi co-op, and settings.
+- Quality presets, FPS caps, camera controls, touch sizing/opacity, master volume, and live performance readout.
+- Direct Wi-Fi LAN host/join using ENet/UDP port 24560.
+- LAN session capacity configured for 1 host + up to 7 guests. Player names are synchronized; basic player movement and shared world state are replicated.
+- Wi-Fi host IP display and copy control.
 
-### Not yet implemented
-- Final character model, animations, and polished camera behavior.
-- High-quality terrain materials, grass, rocks, water animation, and environmental art.
-- Animals, fish, weather, seasons, and world ecology.
-- Survival needs, inventory, crafting, and building.
-- Save/load and player profiles.
-- LAN and online multiplayer, matchmaking, and authoritative servers.
-- Android export configuration and a tested APK.
-- iOS and Windows builds.
+### Current Wi-Fi test flow
+1. Both Android phones join the same Wi-Fi network.
+2. First phone: Play with a Friend → Create World → Copy Host IP.
+3. Second phone: Play with a Friend → enter IP → Join World.
+4. Both enter the same locally hosted session.
 
-## Next milestones
-1. Run the automated Godot validation workflow and fix any parse/runtime errors it reports.
-2. Import and test the project in Godot on an Android device.
-3. Improve touch controls, camera feel, and performance based on device testing.
-4. Replace placeholder visuals with a cohesive original art direction.
-5. Build core exploration and world-interaction loops before adding multiplayer.
+### Not complete / not verified
+- The 4 × 4 km world and dynamic chunk streaming.
+- Final production-quality character, animal, village, and environment art.
+- Deeper NPC schedules, expanded wildlife/ecology, weather, seasons, and audio.
+- Full inventory/item-use progression and persistent hosted worlds.
+- Public server browser, internet matchmaking, accounts, and dedicated online servers (explicitly deferred).
+- Real two-phone Wi-Fi testing, device-specific performance/thermal profiling, and final release signing.
+- Latest menu/LAN changes still require fresh Godot and Android CI validation before an APK can be shared.
 
-## Honest build status
-
-The repository contains project source files. An Android APK has not yet been generated or tested. A successful headless validation does not prove Android export or real-device performance.
+## Build honesty
+Previous CI runs passed for earlier commits, including gameplay/LAN smoke checks and Android debug export. Those results do not validate the latest commits. No physical two-phone test has been performed. The project remains a prototype and the current map is 512 × 512 metres.
