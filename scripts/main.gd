@@ -3756,6 +3756,16 @@ func _start_gameplay_smoke_test() -> void:
         push_error("GAMEPLAY_SMOKE_FAIL: valley lookout landmark was not created")
         get_tree().quit(1)
         return
+    var first_villager_root: Node3D = village_agents[0]["root"]
+    var original_villager_position := first_villager_root.position
+    first_villager_root.position = Vector3(248.0, _height_at(248.0, 248.0), 248.0)
+    var villager_talk_test := _nearest_interaction_for(first_villager_root.global_position)
+    first_villager_root.position = original_villager_position
+    if str(villager_talk_test.get("action", "")) != "talk":
+        push_error("GAMEPLAY_SMOKE_FAIL: approaching a villager did not offer dialogue")
+        get_tree().quit(1)
+        return
+
     if get_node_or_null("Village_Well") == null:
         push_error("GAMEPLAY_SMOKE_FAIL: village well was not created")
         get_tree().quit(1)
@@ -3797,6 +3807,15 @@ func _start_gameplay_smoke_test() -> void:
     _spawn_building_visual("cabin", cabin_position, 0.0, true)
     if get_node_or_null("Built_cabin_01") == null or str(placed_buildings.back().get("type", "")) != "cabin":
         push_error("GAMEPLAY_SMOKE_FAIL: cabin visual or placement record failed")
+        get_tree().quit(1)
+        return
+    var cabin_entry_test := _nearest_interaction_for(cabin_position)
+    if str(cabin_entry_test.get("action", "")) != "home":
+        push_error("GAMEPLAY_SMOKE_FAIL: cabin did not expose its rest interaction")
+        get_tree().quit(1)
+        return
+    if not _get_journey_objective().contains("Explore"):
+        push_error("GAMEPLAY_SMOKE_FAIL: journey objective did not advance after building a cabin")
         get_tree().quit(1)
         return
 
