@@ -4225,6 +4225,29 @@ func _start_gameplay_smoke_test() -> void:
         get_tree().quit(1)
         return
 
+    if get_node_or_null("HUD/OpenMainMenu") == null:
+        push_error("GAMEPLAY_SMOKE_FAIL: in-game menu shortcut is missing")
+        get_tree().quit(1)
+        return
+    _open_multiplayer_from_menu()
+    if main_menu_layer.visible or not network_panel.visible or settings_panel.visible:
+        push_error("GAMEPLAY_SMOKE_FAIL: Wi-Fi menu navigation failed")
+        get_tree().quit(1)
+        return
+    _return_to_main_menu()
+    _open_settings_from_menu()
+    if main_menu_layer.visible or not settings_panel.visible or network_panel.visible:
+        push_error("GAMEPLAY_SMOKE_FAIL: settings menu navigation failed")
+        get_tree().quit(1)
+        return
+    _return_to_main_menu()
+    player.velocity = Vector3(3.0, 0.0, 0.0)
+    _physics_process(0.1)
+    if player.velocity.length_squared() > 0.001 or not _is_frontend_visible():
+        push_error("GAMEPLAY_SMOKE_FAIL: player movement was not paused behind menus")
+        get_tree().quit(1)
+        return
+
     if resource_nodes.size() < 11 or wildlife_agents.size() < 27 or village_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null or survival_bars.size() != 4:
         push_error("GAMEPLAY_SMOKE_FAIL: resources or crafting interface missing")
         get_tree().quit(1)
