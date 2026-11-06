@@ -2710,6 +2710,12 @@ func _start_gameplay_smoke_test() -> void:
         get_tree().quit(1)
         return
 
+    for build_type in ["campfire", "storage", "shelter"]:
+        if not build_recipe_buttons.has(build_type) or not (build_recipe_buttons[build_type] as Button).disabled:
+            push_error("GAMEPLAY_SMOKE_FAIL: unaffordable recipe should be disabled")
+            get_tree().quit(1)
+            return
+
     var test_resource: Dictionary = resource_nodes[0]
     var test_resource_position: Vector3 = test_resource["position"]
     player.global_position = test_resource_position + Vector3(0.0, 1.2, 0.0)
@@ -2732,16 +2738,35 @@ func _start_gameplay_smoke_test() -> void:
         push_error("GAMEPLAY_SMOKE_FAIL: gathering did not update shared inventory")
         get_tree().quit(1)
         return
+    if (build_recipe_buttons["campfire"] as Button).disabled:
+        push_error("GAMEPLAY_SMOKE_FAIL: affordable campfire recipe remained disabled")
+        get_tree().quit(1)
+        return
+
+    var inventory_before_invalid_place := shared_inventory.duplicate(true)
+    var previous_build_count := placed_buildings.size()
+    _server_place_building("campfire", Vector3(0.0, _height_at(0.0, -4.0) + 1.2, -4.0), 0.0)
+    if placed_buildings.size() != previous_build_count or shared_inventory != inventory_before_invalid_place:
+        push_error("GAMEPLAY_SMOKE_FAIL: invalid river-side placement consumed materials")
+        get_tree().quit(1)
+        return
 
     var test_build_position := Vector3(70.0, _height_at(70.0, 80.0) + 1.2, 80.0)
-    var previous_build_count := placed_buildings.size()
-    _server_place_building("campfire", test_build_position, 0.0)
+    _server_place_building("campfire", test_build_position, 0.0, PI * 0.5)
+    if not is_equal_approx(float(placed_buildings.back()["rotation"]), PI * 0.5):
+        push_error("GAMEPLAY_SMOKE_FAIL: requested structure rotation was not preserved")
+        get_tree().quit(1)
+        return
     if placed_buildings.size() != previous_build_count + 1:
         push_error("GAMEPLAY_SMOKE_FAIL: campfire recipe or placement failed")
         get_tree().quit(1)
         return
     if int(shared_inventory["wood"]) != 0 or int(shared_inventory["stone"]) != 0:
         push_error("GAMEPLAY_SMOKE_FAIL: crafting did not consume recipe materials")
+        get_tree().quit(1)
+        return
+    if not (build_recipe_buttons["campfire"] as Button).disabled:
+        push_error("GAMEPLAY_SMOKE_FAIL: depleted campfire recipe remained enabled")
         get_tree().quit(1)
         return
 
