@@ -19,7 +19,12 @@ Last updated: 2026-11-06
 - Camera controls include adjustable sensitivity, follow distance, and field of view; touch buttons include adjustable size and opacity.
 - Smooth horizontal acceleration/deceleration and a sprint speed tier.
 - Basic day/night cycle and early survival interactions.
-- Local save/restore for player position, survival values, world time, berry servings, and World Memory.
+- Collectible wood, stone, and fiber resource deposits with depletion visuals.
+- Shared material inventory and recipe-based placement for campfires, storage crates, and simple wood shelters.
+- Host-authoritative LAN resource collection and structure placement; new guests receive the shared inventory, remaining resource amounts, and built structures.
+- Local persistence for player position, survival values, world time, berry servings, resource depletion, shared inventory, placed structures, control layout, and World Memory.
+- Automated gameplay smoke test verifies resource collection, material costs, placement, and save-file persistence.
+- Automated LAN smoke test verifies player movement and that a guest gathering a resource updates the host and guest shared state.
 - Experimental LAN host/join flow for two phones on the same Wi-Fi.
 - Position/facing synchronization, remote player placeholders, disconnect handling, and initial shared world interaction synchronization.
 - Android Internet permission for ENet/UDP LAN traffic.
@@ -29,7 +34,7 @@ Last updated: 2026-11-06
 - Physical-device verification of the new analog joystick, button editing, and touch hit areas across different aspect ratios.
 - Successful two-physical-phone LAN test and router compatibility.
 - Reconnection, host migration, session recovery, and robust packet-loss behavior.
-- Full authoritative multiplayer for all inventory, survival, building, and world changes.
+- Full authoritative multiplayer for survival values, all resource types, crafting recipes, structure interaction/destruction, and every persistent world change.
 - Player identities, accounts, chat, invitations, moderation, and online matchmaking.
 - Final character models, polished animation, audio, and production environment art.
 - Animals, weather, seasons, multiple completed biomes, crafting, and non-grid building.
@@ -46,7 +51,7 @@ Last updated: 2026-11-06
 
 ## Next milestones
 
-1. Pass the Godot import and scene smoke test for the LAN branch.
+1. Complete the Godot import, scene, gameplay, and shared-resource LAN smoke tests.
 2. Pass Android export with Internet permission and enforce the 700 MB APK ceiling.
 3. Install and test the build on two physical Android phones on the same Wi-Fi.
 4. Fix any touch, network, orientation, or startup failures found on device.
