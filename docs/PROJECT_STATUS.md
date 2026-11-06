@@ -17,6 +17,8 @@ Last updated: 2026-11-06
 - Adjustable camera sensitivity and touch-button scale; drag-to-reposition action buttons, reset layout, and save the chosen layout locally.
 - Scrollable in-game performance/settings panel with live FPS, frame-time (ms/frame), and process-memory readout.
 - Camera controls include adjustable sensitivity, follow distance, and field of view; touch buttons include adjustable size and opacity.
+- Building mode shows a placement preview, marks river/overlap/start-camp invalid zones, supports 15-degree rotation steps, and disables recipes that cannot currently be afforded.
+- LAN build requests now carry the guest's selected rotation to the host; automated gameplay checks cover affordability, invalid placement not consuming supplies, and rotation persistence.
 - Smooth horizontal acceleration/deceleration and a sprint speed tier.
 - Basic day/night cycle and early survival interactions.
 - Collectible wood, stone, and fiber resource deposits with depletion visuals.
