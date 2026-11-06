@@ -2829,6 +2829,18 @@ func _start_gameplay_smoke_test() -> void:
         get_tree().quit(1)
         return
 
+    var wildlife_origin := Vector3(-42.0, 0.0, 20.0)
+    var wildlife_destination := _constrain_wildlife_target(Vector3(70.0, 0.0, 20.0), wildlife_origin)
+    var wildlife_river_center := sin(wildlife_destination.z * 0.018) * 18.0
+    if wildlife_destination.x < -135.0 or wildlife_destination.x > 135.0 or wildlife_destination.z < -145.0 or wildlife_destination.z > 145.0:
+        push_error("GAMEPLAY_SMOKE_FAIL: wildlife target escaped its habitat bounds")
+        get_tree().quit(1)
+        return
+    if absf(wildlife_destination.x - wildlife_river_center) < 9.9 or (wildlife_destination.x - wildlife_river_center) * (wildlife_origin.x - sin(wildlife_origin.z * 0.018) * 18.0) <= 0.0:
+        push_error("GAMEPLAY_SMOKE_FAIL: wildlife target crossed the river or entered deep water")
+        get_tree().quit(1)
+        return
+
     for build_type in ["campfire", "storage", "shelter"]:
         if not build_recipe_buttons.has(build_type) or not (build_recipe_buttons[build_type] as Button).disabled:
             push_error("GAMEPLAY_SMOKE_FAIL: unaffordable recipe should be disabled")
