@@ -3098,6 +3098,7 @@ func _update_wildlife(delta: float) -> void:
                 continue
             root.visible = true
             if distance_squared > 100.0 * 100.0:
+                animal["walking"] = false
                 animal["timer"] = maxf(0.0, timer)
                 wildlife_agents[index] = animal
                 continue
