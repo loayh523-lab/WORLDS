@@ -9,8 +9,11 @@ Last updated: 2026-11-06
 - Landscape mobile orientation and keep-screen-on setting.
 - Procedural rolling terrain with collision, river valley, and instanced forest.
 - Stylized placeholder character, walking animation, third-person follow camera.
-- Keyboard and touch movement; gameplay buttons use TouchScreenButton to support simultaneous touches.
-- Camera dragging and interaction.
+- Keyboard movement plus a two-finger-friendly virtual analog joystick for mobile movement; the right side remains available for camera drag.
+- Touch actions for interaction, sprint, and jump, with simultaneous-touch input.
+- Adjustable camera sensitivity and touch-button scale; drag-to-reposition action buttons, reset layout, and save the chosen layout locally.
+- Scrollable in-game performance/settings panel with live FPS and process-memory readout.
+- Smooth horizontal acceleration/deceleration and a sprint speed tier.
 - Basic day/night cycle and early survival interactions.
 - Local save/restore for player position, survival values, world time, berry servings, and World Memory.
 - Experimental LAN host/join flow for two phones on the same Wi-Fi.
@@ -19,6 +22,7 @@ Last updated: 2026-11-06
 - Quality profiles and 20–120 FPS caps; Auto adjusts tree density, shadows, and fog based on observed frame rate.
 
 ### Not implemented or not verified yet
+- Physical-device verification of the new analog joystick, button editing, and touch hit areas across different aspect ratios.
 - Successful two-physical-phone LAN test and router compatibility.
 - Reconnection, host migration, session recovery, and robust packet-loss behavior.
 - Full authoritative multiplayer for all inventory, survival, building, and world changes.
