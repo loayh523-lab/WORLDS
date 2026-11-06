@@ -2301,6 +2301,21 @@ func _create_wildlife() -> void:
             "speed": wildlife_rng.randf_range(0.9, 1.35)
         })
 
+func _constrain_wildlife_target(target: Vector3, origin: Vector3) -> Vector3:
+    # Deer remain in the temperate valley and do not deliberately route through deep water.
+    target.x = clampf(target.x, -135.0, 135.0)
+    target.z = clampf(target.z, -145.0, 145.0)
+    var river_center := sin(target.z * 0.018) * 18.0
+    var origin_side := -1.0 if origin.x < sin(origin.z * 0.018) * 18.0 else 1.0
+    var river_offset := target.x - river_center
+    if absf(river_offset) < 10.0:
+        target.x = river_center + origin_side * 10.0
+    # Keep the destination on the animal's current bank when the river bends.
+    var local_center := sin(target.z * 0.018) * 18.0
+    if (origin.x - sin(origin.z * 0.018) * 18.0) * (target.x - local_center) < 0.0:
+        target.x = local_center + origin_side * 10.0
+    return target
+
 func _update_wildlife(delta: float) -> void:
     if wildlife_agents.is_empty():
         return
@@ -2324,16 +2339,14 @@ func _update_wildlife(delta: float) -> void:
         if fleeing:
             target = root.global_position + away * wildlife_rng.randf_range(16.0, 24.0)
             target.x = clampf(target.x, -WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
-            target.z = clampf(target.z, -WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
             timer = wildlife_rng.randf_range(2.0, 3.5)
         elif timer <= 0.0 or Vector2(root.position.x - target.x, root.position.z - target.z).length() < 1.2:
             var angle := wildlife_rng.randf_range(0.0, TAU)
             var distance := wildlife_rng.randf_range(7.0, 18.0)
             target = root.position + Vector3(cos(angle) * distance, 0.0, sin(angle) * distance)
-            target.x = clampf(target.x, -WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
-            target.z = clampf(target.z, -WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
             timer = wildlife_rng.randf_range(3.0, 7.0)
 
+        target = _constrain_wildlife_target(target, root.position)
         var direction := Vector3(target.x - root.position.x, 0.0, target.z - root.position.z)
         var animal_speed := 3.8 if fleeing else float(animal["speed"])
         if direction.length() > 0.1:
