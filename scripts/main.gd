@@ -123,6 +123,8 @@ func _ready() -> void:
     _create_terrain()
     print("WORLDS_STAGE terrain")
     _create_river()
+    _create_riverbank_details()
+    print("WORLDS_STAGE riverbank_details")
     print("WORLDS_STAGE river")
     _create_forest()
     print("WORLDS_STAGE forest")
@@ -351,6 +353,81 @@ void fragment() {
     water_material.shader = water_shader
     water.mesh.surface_set_material(0, water_material)
     add_child(water)
+
+func _create_riverbank_details() -> void:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = 20261112
+
+    var pebble_mesh := SphereMesh.new()
+    pebble_mesh.radius = 0.34
+    pebble_mesh.height = 0.42
+    pebble_mesh.radial_segments = 7
+    pebble_mesh.rings = 4
+    var pebble_multi := MultiMesh.new()
+    pebble_multi.transform_format = MultiMesh.TRANSFORM_3D
+    pebble_multi.use_colors = true
+    pebble_multi.mesh = pebble_mesh
+    pebble_multi.instance_count = 260
+
+    var pebble_material := StandardMaterial3D.new()
+    pebble_material.vertex_color_use_as_albedo = true
+    pebble_material.roughness = 0.98
+
+    for i in range(pebble_multi.instance_count):
+        var z := rng.randf_range(-WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
+        var center_x := sin(z * 0.018) * 18.0
+        var side := -1.0 if rng.randf() < 0.5 else 1.0
+        var x := center_x + side * rng.randf_range(5.2, 10.5)
+        var scale := rng.randf_range(0.45, 1.35)
+        var pebble_position := Vector3(x, _height_at(x, z) + scale * 0.12, z)
+        var pebble_basis := Basis.from_euler(Vector3(
+            rng.randf_range(-0.2, 0.2),
+            rng.randf_range(0.0, TAU),
+            rng.randf_range(-0.2, 0.2)
+        )).scaled(Vector3(scale * 1.35, scale * 0.72, scale))
+        pebble_multi.set_instance_transform(i, Transform3D(pebble_basis, pebble_position))
+        pebble_multi.set_instance_color(i, Color(0.30, 0.34, 0.33).lerp(Color(0.62, 0.58, 0.48), rng.randf() * 0.72))
+
+    var pebbles := MultiMeshInstance3D.new()
+    pebbles.name = "RiverbankPebbles"
+    pebbles.multimesh = pebble_multi
+    pebbles.material_override = pebble_material
+    add_child(pebbles)
+
+    var reed_mesh := CylinderMesh.new()
+    reed_mesh.top_radius = 0.012
+    reed_mesh.bottom_radius = 0.045
+    reed_mesh.height = 0.82
+    reed_mesh.radial_segments = 4
+    var reed_multi := MultiMesh.new()
+    reed_multi.transform_format = MultiMesh.TRANSFORM_3D
+    reed_multi.use_colors = true
+    reed_multi.mesh = reed_mesh
+    reed_multi.instance_count = 180
+
+    var reed_material := StandardMaterial3D.new()
+    reed_material.vertex_color_use_as_albedo = true
+    reed_material.roughness = 1.0
+
+    for i in range(reed_multi.instance_count):
+        var z := rng.randf_range(-WORLD_SIZE * 0.45, WORLD_SIZE * 0.45)
+        var center_x := sin(z * 0.018) * 18.0
+        var side := -1.0 if rng.randf() < 0.5 else 1.0
+        var x := center_x + side * rng.randf_range(6.0, 10.0)
+        var height_scale := rng.randf_range(0.65, 1.35)
+        var lean := rng.randf_range(-0.16, 0.16)
+        var reed_position := Vector3(x, _height_at(x, z) + 0.35 * height_scale, z)
+        var reed_basis := Basis.from_euler(Vector3(lean, rng.randf_range(0.0, TAU), lean * 0.6)).scaled(
+            Vector3(1.0, height_scale, 1.0)
+        )
+        reed_multi.set_instance_transform(i, Transform3D(reed_basis, reed_position))
+        reed_multi.set_instance_color(i, Color(0.24, 0.34, 0.14).lerp(Color(0.55, 0.52, 0.25), rng.randf() * 0.65))
+
+    var reeds := MultiMeshInstance3D.new()
+    reeds.name = "RiverbankReeds"
+    reeds.multimesh = reed_multi
+    reeds.material_override = reed_material
+    add_child(reeds)
 
 func _create_forest() -> void:
     var rng := RandomNumberGenerator.new()
