@@ -74,6 +74,9 @@ var joystick_center := Vector2.ZERO
 var joystick_vector := Vector2.ZERO
 var joystick_touch_index := -1
 var camera_sensitivity := CAMERA_DRAG_SENSITIVITY
+var camera_distance := 7.0
+var camera_fov := 70.0
+var button_opacity := 0.82
 var control_scale := 1.0
 var control_layout_edit_mode := false
 var layout_drag_action := ""
@@ -921,6 +924,28 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     sensitivity_slider.value_changed.connect(_on_camera_sensitivity_changed)
     column.add_child(sensitivity_slider)
 
+    var camera_distance_label := Label.new()
+    camera_distance_label.text = "Camera distance"
+    column.add_child(camera_distance_label)
+    var distance_slider := HSlider.new()
+    distance_slider.min_value = 4.0
+    distance_slider.max_value = 12.0
+    distance_slider.step = 0.5
+    distance_slider.value = camera_distance
+    distance_slider.value_changed.connect(_on_camera_distance_changed)
+    column.add_child(distance_slider)
+
+    var fov_label := Label.new()
+    fov_label.text = "Camera field of view"
+    column.add_child(fov_label)
+    var fov_slider := HSlider.new()
+    fov_slider.min_value = 55.0
+    fov_slider.max_value = 85.0
+    fov_slider.step = 1.0
+    fov_slider.value = camera_fov
+    fov_slider.value_changed.connect(_on_camera_fov_changed)
+    column.add_child(fov_slider)
+
     var scale_label := Label.new()
     scale_label.text = "Touch button size"
     column.add_child(scale_label)
@@ -931,6 +956,17 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     scale_slider.value = control_scale
     scale_slider.value_changed.connect(_on_control_scale_changed)
     column.add_child(scale_slider)
+
+    var opacity_label := Label.new()
+    opacity_label.text = "Touch button opacity"
+    column.add_child(opacity_label)
+    var opacity_slider := HSlider.new()
+    opacity_slider.min_value = 0.4
+    opacity_slider.max_value = 1.0
+    opacity_slider.step = 0.05
+    opacity_slider.value = button_opacity
+    opacity_slider.value_changed.connect(_on_button_opacity_changed)
+    column.add_child(opacity_slider)
 
     var layout_button := Button.new()
     layout_button.text = "EDIT TOUCH BUTTONS"
@@ -954,6 +990,22 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
 
 func _on_camera_sensitivity_changed(value: float) -> void:
     camera_sensitivity = clampf(value, 0.003, 0.012)
+
+func _on_camera_distance_changed(value: float) -> void:
+    camera_distance = clampf(value, 4.0, 12.0)
+    if camera:
+        camera.position = Vector3(0.0, camera_distance * 0.4, camera_distance)
+
+func _on_camera_fov_changed(value: float) -> void:
+    camera_fov = clampf(value, 55.0, 85.0)
+    if camera:
+        camera.fov = camera_fov
+
+func _on_button_opacity_changed(value: float) -> void:
+    button_opacity = clampf(value, 0.4, 1.0)
+    for action in action_buttons:
+        var button: TouchScreenButton = action_buttons[action]
+        button.modulate = Color(1.0, 1.0, 1.0, button_opacity)
 
 func _on_control_scale_changed(value: float) -> void:
     control_scale = clampf(value, 0.75, 1.35)
@@ -1045,9 +1097,12 @@ func _process(delta: float) -> void:
     metrics_refresh_timer += delta
     if metrics_refresh_timer >= 0.75 and metrics_label:
         metrics_refresh_timer = 0.0
+        var current_fps := Engine.get_frames_per_second()
+        var frame_time_ms := 1000.0 / maxf(1.0, float(current_fps))
         var current_memory_mb := Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0
-        metrics_label.text = "Live  •  %d FPS  •  %.0f MB memory  •  cap %d" % [
-            Engine.get_frames_per_second(),
+        metrics_label.text = "Live  •  %d FPS  •  %.1f ms/frame  •  %.0f MB process memory  •  cap %d" % [
+            current_fps,
+            frame_time_ms,
             current_memory_mb,
             current_fps_target
         ]
@@ -1860,6 +1915,9 @@ func _save_game() -> void:
     config.set_value("player", "rest", rest)
     config.set_value("player", "position", player.global_position)
     config.set_value("controls", "camera_sensitivity", camera_sensitivity)
+    config.set_value("controls", "camera_distance", camera_distance)
+    config.set_value("controls", "camera_fov", camera_fov)
+    config.set_value("controls", "button_opacity", button_opacity)
     config.set_value("controls", "button_scale", control_scale)
     for action in action_buttons:
         var button: TouchScreenButton = action_buttons[action]
@@ -1888,6 +1946,12 @@ func _load_game() -> void:
     thirst = clampf(float(config.get_value("player", "thirst", thirst)), 0.0, 100.0)
     rest = clampf(float(config.get_value("player", "rest", rest)), 0.0, 100.0)
     camera_sensitivity = clampf(float(config.get_value("controls", "camera_sensitivity", camera_sensitivity)), 0.003, 0.012)
+    camera_distance = clampf(float(config.get_value("controls", "camera_distance", camera_distance)), 4.0, 12.0)
+    camera_fov = clampf(float(config.get_value("controls", "camera_fov", camera_fov)), 55.0, 85.0)
+    button_opacity = clampf(float(config.get_value("controls", "button_opacity", button_opacity)), 0.4, 1.0)
+    _on_camera_distance_changed(camera_distance)
+    _on_camera_fov_changed(camera_fov)
+    _on_button_opacity_changed(button_opacity)
     control_scale = clampf(float(config.get_value("controls", "button_scale", control_scale)), 0.75, 1.35)
     _on_control_scale_changed(control_scale)
     for action in action_buttons:
