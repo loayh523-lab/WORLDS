@@ -1354,6 +1354,10 @@ func _broadcast_shared_world_state() -> void:
     for index in range(berry_bushes.size()):
         var bush: Dictionary = berry_bushes[index]
         rpc("_rpc_set_berry_servings", index, int(bush["servings"]))
+    rpc("_rpc_set_shared_inventory", shared_inventory)
+    for index in range(resource_nodes.size()):
+        var resource: Dictionary = resource_nodes[index]
+        rpc("_rpc_set_resource_amount", index, int(resource["amount"]))
 
 func _update_survival(delta: float) -> void:
     # Needs decline slowly so exploration stays relaxed rather than punishing.
@@ -2221,9 +2225,15 @@ func _rpc_request_player_roster() -> void:
         if is_instance_valid(avatar):
             rpc_id(requester, "_rpc_spawn_remote_player", int(peer_id), avatar.global_position, avatar.rotation.y)
     rpc_id(requester, "_rpc_set_shared_clock", world_clock)
+    rpc_id(requester, "_rpc_set_shared_inventory", shared_inventory)
     for index in range(berry_bushes.size()):
         var bush: Dictionary = berry_bushes[index]
         rpc_id(requester, "_rpc_set_berry_servings", index, int(bush["servings"]))
+    for index in range(resource_nodes.size()):
+        var resource: Dictionary = resource_nodes[index]
+        rpc_id(requester, "_rpc_set_resource_amount", index, int(resource["amount"]))
+    for building in placed_buildings:
+        rpc_id(requester, "_rpc_spawn_building", str(building["type"]), building["position"], float(building["rotation"]))
     if memory_awakened:
         rpc_id(requester, "_rpc_world_memory_activated")
 
@@ -2339,6 +2349,13 @@ func _save_game() -> void:
         berry_servings.append(int(bush["servings"]))
     config.set_value("world", "berry_servings", berry_servings)
 
+    var resource_amounts: Array[int] = []
+    for resource in resource_nodes:
+        resource_amounts.append(int(resource["amount"]))
+    config.set_value("world", "resource_amounts", resource_amounts)
+    config.set_value("world", "shared_inventory", shared_inventory)
+    config.set_value("world", "placed_buildings", placed_buildings)
+
     var error := config.save(SAVE_PATH)
     if error == OK:
         save_elapsed = 0.0
@@ -2384,6 +2401,28 @@ func _load_game() -> void:
             var bush: Dictionary = berry_bushes[index]
             bush["servings"] = clampi(int(saved_berries[index]), 0, 3)
             berry_bushes[index] = bush
+
+    var saved_inventory: Variant = config.get_value("world", "shared_inventory", {})
+    if saved_inventory is Dictionary:
+        for key in ["wood", "stone", "fiber"]:
+            shared_inventory[key] = maxi(0, int(saved_inventory.get(key, 0)))
+    _update_inventory_ui()
+
+    var saved_resources: Variant = config.get_value("world", "resource_amounts", [])
+    if saved_resources is Array:
+        for index in range(mini(saved_resources.size(), resource_nodes.size())):
+            _set_resource_amount_local(index, int(saved_resources[index]))
+
+    var saved_buildings: Variant = config.get_value("world", "placed_buildings", [])
+    if saved_buildings is Array:
+        for building in saved_buildings:
+            if not (building is Dictionary):
+                continue
+            var build_type := str(building.get("type", ""))
+            var build_position: Variant = building.get("position", Vector3.ZERO)
+            var build_facing := float(building.get("rotation", 0.0))
+            if build_type in ["campfire", "storage", "shelter"] and typeof(build_position) == TYPE_VECTOR3:
+                _spawn_building_visual(build_type, build_position, build_facing, true)
 
     if bool(config.get_value("world", "memory_awakened", false)):
         _apply_world_memory()
