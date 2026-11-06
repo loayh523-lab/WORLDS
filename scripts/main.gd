@@ -56,6 +56,7 @@ var build_rotation_offset := 0.0
 var build_preview: MeshInstance3D
 var build_preview_material: StandardMaterial3D
 var camp_position := Vector3.ZERO
+var village_well_position := Vector3.ZERO
 var memory_position := Vector3.ZERO
 var memory_awakened := false
 var status_note := ""
@@ -1444,6 +1445,12 @@ func _nearest_interaction_for(position: Vector3) -> Dictionary:
         best_distance = river_distance
         result["action"] = "drink"
 
+    var well_distance := Vector2(position.x - village_well_position.x, position.z - village_well_position.z).length()
+    if well_distance < 3.4 and well_distance < best_distance:
+        best_distance = well_distance
+        result["action"] = "drink"
+        result["index"] = -1
+
     for index in range(berry_bushes.size()):
         var bush: Dictionary = berry_bushes[index]
         if int(bush["servings"]) <= 0:
@@ -1663,7 +1670,7 @@ func _update_survival(delta: float) -> void:
 func _get_interaction_prompt() -> String:
     match _nearest_interaction():
         "drink":
-            return "USE / E: Drink from the river"
+            return "USE / E: Drink fresh water"
         "forage":
             return "USE / E: Gather wild berries"
         "gather":
@@ -2533,6 +2540,105 @@ func _create_village() -> void:
         var chimney := _village_box(house, "Chimney", Vector3(0.75, 1.7, 0.75), Vector3(2.3, 4.8, 1.6), wall_materials[1])
         chimney.rotation.y = 0.15
 
+    village_well_position = Vector3(village_center.x, _height_at(village_center.x, village_center.z - 38.0), village_center.z - 38.0)
+    var well_root := Node3D.new()
+    well_root.name = "Village_Well"
+    well_root.position = village_well_position
+    add_child(well_root)
+    var well_stone := StandardMaterial3D.new()
+    well_stone.albedo_color = Color(0.43, 0.46, 0.42)
+    well_stone.roughness = 0.98
+    var well_dark := StandardMaterial3D.new()
+    well_dark.albedo_color = Color(0.12, 0.22, 0.24)
+    well_dark.roughness = 0.35
+    var well_water := StandardMaterial3D.new()
+    well_water.albedo_color = Color(0.08, 0.38, 0.51)
+    well_water.emission_enabled = true
+    well_water.emission = Color(0.025, 0.12, 0.18)
+    well_water.emission_energy_multiplier = 0.35
+    var well_pad := MeshInstance3D.new()
+    var well_pad_mesh := CylinderMesh.new()
+    well_pad_mesh.top_radius = 3.2
+    well_pad_mesh.bottom_radius = 3.2
+    well_pad_mesh.height = 0.18
+    well_pad.mesh = well_pad_mesh
+    well_pad.position.y = 0.09
+    well_pad.material_override = well_stone
+    well_root.add_child(well_pad)
+    var well_body := MeshInstance3D.new()
+    var well_body_mesh := CylinderMesh.new()
+    well_body_mesh.top_radius = 1.28
+    well_body_mesh.bottom_radius = 1.38
+    well_body_mesh.height = 1.35
+    well_body.mesh = well_body_mesh
+    well_body.position.y = 0.76
+    well_body.material_override = well_stone
+    well_root.add_child(well_body)
+    var well_inner := MeshInstance3D.new()
+    var well_inner_mesh := CylinderMesh.new()
+    well_inner_mesh.top_radius = 1.03
+    well_inner_mesh.bottom_radius = 1.03
+    well_inner_mesh.height = 0.08
+    well_inner.mesh = well_inner_mesh
+    well_inner.position.y = 1.25
+    well_inner.material_override = well_dark
+    well_root.add_child(well_inner)
+    var well_surface := MeshInstance3D.new()
+    var well_surface_mesh := CylinderMesh.new()
+    well_surface_mesh.top_radius = 0.90
+    well_surface_mesh.bottom_radius = 0.90
+    well_surface_mesh.height = 0.035
+    well_surface.mesh = well_surface_mesh
+    well_surface.position.y = 1.30
+    well_surface.material_override = well_water
+    well_root.add_child(well_surface)
+    for well_post_side in [-1.0, 1.0]:
+        _village_box(well_root, "Well_Timber_Post", Vector3(0.22, 3.2, 0.22), Vector3(well_post_side * 1.48, 2.15, 0.0), wood_material)
+    _village_box(well_root, "Well_Crossbeam", Vector3(3.35, 0.22, 0.25), Vector3(0.0, 3.78, 0.0), wood_material)
+    _village_box(well_root, "Well_Canopy", Vector3(4.2, 0.22, 3.25), Vector3(0.0, 3.92, 0.0), roof_material)
+    _village_box(well_root, "Well_Bucket", Vector3(0.48, 0.48, 0.48), Vector3(0.0, 1.82, 0.55), wood_material)
+
+    # Two compact market stalls add a lived-in center to the settlement.
+    for stall_index in range(2):
+        var stall_side := -1.0 if stall_index == 0 else 1.0
+        var stall_x := village_center.x + stall_side * 10.5
+        var stall_z := village_center.z - 30.0
+        var stall_root := Node3D.new()
+        stall_root.name = "Village_Market_Stall_%02d" % stall_index
+        stall_root.position = Vector3(stall_x, _height_at(stall_x, stall_z), stall_z)
+        add_child(stall_root)
+        for post_x in [-2.25, 2.25]:
+            for post_z in [-1.55, 1.55]:
+                _village_box(stall_root, "Market_Post", Vector3(0.18, 2.85, 0.18), Vector3(post_x, 1.42, post_z), wood_material)
+        _village_box(stall_root, "Market_Counter", Vector3(4.85, 0.82, 1.05), Vector3(0.0, 0.62, 0.35), wood_material)
+        _village_box(stall_root, "Market_Countertop", Vector3(5.0, 0.13, 1.18), Vector3(0.0, 1.10, 0.35), wood_material)
+        var awning_colors := [Color(0.62, 0.25, 0.17), Color(0.83, 0.70, 0.49)]
+        for stripe_index in range(5):
+            var stripe_material := StandardMaterial3D.new()
+            stripe_material.albedo_color = awning_colors[(stripe_index + stall_index) % awning_colors.size()]
+            stripe_material.roughness = 0.96
+            _village_box(stall_root, "Market_Awning_Stripe", Vector3(1.08, 0.18, 4.05), Vector3(-2.16 + float(stripe_index) * 1.08, 2.92, 0.0), stripe_material)
+        for barrel_side in [-1.0, 1.0]:
+            var market_barrel := MeshInstance3D.new()
+            var market_barrel_mesh := CylinderMesh.new()
+            market_barrel_mesh.top_radius = 0.36
+            market_barrel_mesh.bottom_radius = 0.43
+            market_barrel_mesh.height = 0.92
+            market_barrel.mesh = market_barrel_mesh
+            market_barrel.position = Vector3(barrel_side * 1.72, 0.48, -0.65)
+            market_barrel.material_override = wood_material
+            stall_root.add_child(market_barrel)
+        var produce_colors := [Color(0.72, 0.20, 0.12), Color(0.86, 0.62, 0.16), Color(0.38, 0.62, 0.25), Color(0.70, 0.30, 0.18)]
+        for produce_index in range(8):
+            var produce := MeshInstance3D.new()
+            var produce_mesh := SphereMesh.new()
+            produce_mesh.radius = 0.16
+            produce_mesh.height = 0.22
+            produce.mesh = produce_mesh
+            produce.position = Vector3(-1.65 + float(produce_index % 4) * 1.08, 1.32, -0.02 + float(produce_index / 4) * 0.48)
+            produce.material_override = _build_material(produce_colors[produce_index % produce_colors.size()])
+            stall_root.add_child(produce)
+
     for lamp_index in range(4):
         var lamp_x := village_center.x + ( -1.0 if lamp_index % 2 == 0 else 1.0) * 5.5
         var lamp_z := village_center.z - 22.0 + float(lamp_index) * 15.0
@@ -3364,6 +3470,15 @@ func _start_gameplay_smoke_test() -> void:
         return
     if get_node_or_null("Riverlight_Crossing") == null or get_node_or_null("River_Whisper_Pavilion") == null:
         push_error("GAMEPLAY_SMOKE_FAIL: riverfront landmarks were not created")
+        get_tree().quit(1)
+        return
+    if get_node_or_null("Village_Well") == null:
+        push_error("GAMEPLAY_SMOKE_FAIL: village well was not created")
+        get_tree().quit(1)
+        return
+    var well_test := _nearest_interaction_for(village_well_position + Vector3(0.0, 0.8, 0.0))
+    if str(well_test.get("action", "")) != "drink":
+        push_error("GAMEPLAY_SMOKE_FAIL: village well interaction did not resolve")
         get_tree().quit(1)
         return
 
