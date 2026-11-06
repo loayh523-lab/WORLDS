@@ -78,8 +78,8 @@ func _create_environment() -> void:
 func _height_at(x: float, z: float) -> float:
     var hills := sin(x * 0.055) * 1.7 + cos(z * 0.047) * 1.5
     hills += sin((x + z) * 0.025) * 2.2
-    var river_bank := abs(x - sin(z * 0.035) * 8.0)
-    var valley := -max(0.0, 1.0 - river_bank / 13.0) * 1.1
+    var river_bank: float = absf(x - sin(z * 0.035) * 8.0)
+    var valley: float = -maxf(0.0, 1.0 - river_bank / 13.0) * 1.1
     return hills + valley
 
 func _create_terrain() -> void:
@@ -96,7 +96,7 @@ func _create_terrain() -> void:
             vertices.append(Vector3(x, y, z))
 
             var tint := Color(0.22, 0.42, 0.20)
-            var variation := clamp((y + 4.0) / 12.0, 0.0, 1.0)
+            var variation: float = clampf((y + 4.0) / 12.0, 0.0, 1.0)
             tint = tint.lerp(Color(0.38, 0.48, 0.29), variation * 0.55)
             colors.append(tint)
 
@@ -481,7 +481,7 @@ func _nearest_interaction() -> String:
     var best_action := ""
 
     var river_center := sin(player.position.z * 0.035) * 8.0
-    var river_distance := abs(player.position.x - river_center)
+    var river_distance: float = absf(player.position.x - river_center)
     if river_distance < 5.5 and abs(player.position.z) < WORLD_SIZE * 0.5:
         best_distance = river_distance
         best_action = "drink"
@@ -704,8 +704,8 @@ func _awaken_world_memory() -> void:
 
     for i in range(12):
         var progress := float(i) / 11.0
-        var trail_x := lerp(memory_position.x, -7.0, progress) + sin(progress * PI * 2.0) * 1.7
-        var trail_z := lerp(memory_position.z, -8.0, progress)
+        var trail_x: float = lerpf(memory_position.x, -7.0, progress) + sin(progress * PI * 2.0) * 1.7
+        var trail_z: float = lerpf(memory_position.z, -8.0, progress)
         var marker := MeshInstance3D.new()
         marker.mesh = trail_mesh
         marker.material_override = trail_material
@@ -725,7 +725,7 @@ func _update_day_cycle(delta: float) -> void:
 
     # One full in-game day lasts 20 real minutes.
     world_clock = fposmod(world_clock + delta * 24.0 / 1200.0, 24.0)
-    var daylight := clamp(sin((world_clock - 6.0) / 12.0 * PI), 0.0, 1.0)
+    var daylight: float = clampf(sin((world_clock - 6.0) / 12.0 * PI), 0.0, 1.0)
     var day_sky := Color(0.16, 0.35, 0.56)
     var night_sky := Color(0.012, 0.025, 0.075)
 
