@@ -61,6 +61,22 @@ var adaptive_check_timer := 0.0
 var hud_refresh_timer := 0.0
 var current_fps_target := 60
 var lan_smoke_client_passed := false
+var joystick_base: TextureRect
+var joystick_knob: TextureRect
+var joystick_center := Vector2.ZERO
+var joystick_vector := Vector2.ZERO
+var joystick_touch_index := -1
+var camera_sensitivity := CAMERA_DRAG_SENSITIVITY
+var control_scale := 1.0
+var control_layout_edit_mode := false
+var layout_drag_action := ""
+var layout_touch_index := -1
+var action_buttons: Dictionary = {}
+var action_captions: Dictionary = {}
+var settings_panel: PanelContainer
+var layout_status_label: Label
+var metrics_label: Label
+var metrics_refresh_timer := 0.0
 
 func _ready() -> void:
     multiplayer.peer_connected.connect(_on_peer_connected)
@@ -443,15 +459,53 @@ func _create_hud() -> void:
     normal_touch_texture = _make_touch_texture(Color(0.08, 0.28, 0.25, 0.76))
     pressed_touch_texture = _make_touch_texture(Color(0.16, 0.58, 0.46, 0.94))
     var screen_size := get_viewport().get_visible_rect().size
-    _add_control_button("◀", Vector2(screen_size.x * 0.10, screen_size.y * 0.78), "left")
-    _add_control_button("▶", Vector2(screen_size.x * 0.22, screen_size.y * 0.78), "right")
-    _add_control_button("▲", Vector2(screen_size.x * 0.16, screen_size.y * 0.67), "forward")
-    _add_control_button("▼", Vector2(screen_size.x * 0.16, screen_size.y * 0.89), "back")
-    _add_control_button("USE", Vector2(screen_size.x * 0.88, screen_size.y * 0.71), "interact", true)
+    _create_virtual_joystick(screen_size)
+    _add_control_button("USE", Vector2(screen_size.x * 0.75, screen_size.y * 0.70), "interact", true)
+    _add_control_button("RUN", Vector2(screen_size.x * 0.75, screen_size.y * 0.86), "run", true)
     _add_control_button("JUMP", Vector2(screen_size.x * 0.88, screen_size.y * 0.86), "jump", true)
 
     _create_network_panel(layer)
     _create_settings_panel(layer)
+
+func _create_virtual_joystick(screen_size: Vector2) -> void:
+    joystick_center = Vector2(screen_size.x * 0.16, screen_size.y * 0.79)
+
+    joystick_base = TextureRect.new()
+    joystick_base.name = "VirtualJoystickBase"
+    joystick_base.texture = normal_touch_texture
+    joystick_base.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    joystick_base.stretch_mode = TextureRect.STRETCH_SCALE
+    joystick_base.size = Vector2(142.0, 142.0)
+    joystick_base.position = joystick_center - joystick_base.size * 0.5
+    joystick_base.modulate = Color(1.0, 1.0, 1.0, 0.72)
+    joystick_base.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    mobile_controls.add_child(joystick_base)
+
+    joystick_knob = TextureRect.new()
+    joystick_knob.name = "VirtualJoystickKnob"
+    joystick_knob.texture = pressed_touch_texture
+    joystick_knob.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    joystick_knob.stretch_mode = TextureRect.STRETCH_SCALE
+    joystick_knob.size = Vector2(58.0, 58.0)
+    joystick_knob.position = joystick_center - joystick_knob.size * 0.5
+    joystick_knob.modulate = Color(1.0, 1.0, 1.0, 0.92)
+    joystick_knob.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    mobile_controls.add_child(joystick_knob)
+
+func _update_virtual_joystick(pointer_position: Vector2) -> void:
+    var offset := pointer_position - joystick_center
+    var radius := 52.0
+    if offset.length() > radius:
+        offset = offset.normalized() * radius
+    joystick_vector = offset / radius
+    if joystick_knob:
+        joystick_knob.position = joystick_center + offset - joystick_knob.size * 0.5
+
+func _reset_virtual_joystick() -> void:
+    joystick_touch_index = -1
+    joystick_vector = Vector2.ZERO
+    if joystick_knob:
+        joystick_knob.position = joystick_center - joystick_knob.size * 0.5
 
 func _make_touch_texture(fill_color: Color) -> Texture2D:
     var image := Image.create(112, 112, false, Image.FORMAT_RGBA8)
@@ -467,8 +521,9 @@ func _add_control_button(label_text: String, center: Vector2, action: String, is
     var button := TouchScreenButton.new()
     button.name = "Touch_%s" % action
     button.position = center
+    button.scale = Vector2.ONE * control_scale
     var hit_shape := CircleShape2D.new()
-    hit_shape.radius = 53.0 if is_action_button else 47.0
+    hit_shape.radius = (53.0 if is_action_button else 47.0)
     button.shape = hit_shape
     button.texture_normal = normal_touch_texture
     button.texture_pressed = pressed_touch_texture
@@ -476,19 +531,62 @@ func _add_control_button(label_text: String, center: Vector2, action: String, is
     button.pressed.connect(_on_control_pressed.bind(action))
     button.released.connect(_on_control_released.bind(action))
     touch_button_layer.add_child(button)
+    action_buttons[action] = button
 
     var caption := Label.new()
     caption.text = label_text
-    caption.position = center - Vector2(42, 20)
-    caption.size = Vector2(84, 40)
+    caption.position = center - Vector2(42, 20) * control_scale
+    caption.size = Vector2(84, 40) * control_scale
     caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     caption.add_theme_color_override("font_color", Color(0.98, 1.0, 0.94))
-    caption.add_theme_font_size_override("font_size", 14 if is_action_button else 27)
+    caption.add_theme_font_size_override("font_size", roundi((14 if is_action_button else 27) * control_scale))
     caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
     mobile_controls.add_child(caption)
+    action_captions[action] = caption
+
+func _move_action_button(action: String, center: Vector2) -> void:
+    if not action_buttons.has(action) or not action_captions.has(action):
+        return
+    var screen_size := get_viewport().get_visible_rect().size
+    var safe_center := Vector2(
+        clampf(center.x, 58.0 * control_scale, screen_size.x - 58.0 * control_scale),
+        clampf(center.y, 58.0 * control_scale, screen_size.y - 58.0 * control_scale)
+    )
+    var button: TouchScreenButton = action_buttons[action]
+    var caption: Label = action_captions[action]
+    button.position = safe_center
+    caption.position = safe_center - Vector2(42.0, 20.0) * control_scale
+
+func _action_button_at(pointer_position: Vector2) -> String:
+    for action in action_buttons:
+        var button: TouchScreenButton = action_buttons[action]
+        if pointer_position.distance_to(button.position) <= 64.0 * control_scale:
+            return str(action)
+    return ""
+
+func _set_control_layout_edit(enabled: bool) -> void:
+    control_layout_edit_mode = enabled
+    layout_drag_action = ""
+    layout_touch_index = -1
+    pressed_actions.clear()
+    if layout_status_label:
+        layout_status_label.text = "Drag buttons to move them. Tap Done when finished." if enabled else "Touch layout saved."
+    if joystick_base:
+        joystick_base.modulate = Color(1.0, 0.8, 0.35, 0.92) if enabled else Color(1.0, 1.0, 1.0, 0.72)
+
+func _reset_control_layout() -> void:
+    var screen_size := get_viewport().get_visible_rect().size
+    _move_action_button("interact", Vector2(screen_size.x * 0.75, screen_size.y * 0.70))
+    _move_action_button("run", Vector2(screen_size.x * 0.75, screen_size.y * 0.86))
+    _move_action_button("jump", Vector2(screen_size.x * 0.88, screen_size.y * 0.86))
+    _save_game()
+    if layout_status_label:
+        layout_status_label.text = "Default touch layout restored."
 
 func _on_control_pressed(action: String) -> void:
+    if control_layout_edit_mode:
+        return
     if action == "interact":
         _try_interact()
         return
@@ -550,12 +648,13 @@ func _create_network_panel(layer: CanvasLayer) -> void:
 
 func _create_settings_panel(layer: CanvasLayer) -> void:
     var screen_size := get_viewport().get_visible_rect().size
-    var panel := PanelContainer.new()
-    panel.name = "PerformancePanel"
-    panel.position = Vector2(screen_size.x - 330.0, 340.0)
-    panel.custom_minimum_size = Vector2(310.0, 0.0)
-    layer.add_child(panel)
+    settings_panel = PanelContainer.new()
+    settings_panel.name = "PerformancePanel"
+    settings_panel.position = Vector2(screen_size.x - 330.0, 340.0)
+    settings_panel.custom_minimum_size = Vector2(310.0, 0.0)
+    layer.add_child(settings_panel)
 
+    var panel := settings_panel
     var column := VBoxContainer.new()
     column.add_theme_constant_override("separation", 4)
     panel.add_child(column)
@@ -601,11 +700,112 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     fps_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(fps_label)
 
+    metrics_label = Label.new()
+    metrics_label.text = "Live: waiting for frame sample..."
+    metrics_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(metrics_label)
+
+    var sensitivity_label := Label.new()
+    sensitivity_label.text = "Camera sensitivity"
+    column.add_child(sensitivity_label)
+    var sensitivity_slider := HSlider.new()
+    sensitivity_slider.min_value = 0.003
+    sensitivity_slider.max_value = 0.012
+    sensitivity_slider.step = 0.001
+    sensitivity_slider.value = camera_sensitivity
+    sensitivity_slider.value_changed.connect(_on_camera_sensitivity_changed)
+    column.add_child(sensitivity_slider)
+
+    var scale_label := Label.new()
+    scale_label.text = "Touch button size"
+    column.add_child(scale_label)
+    var scale_slider := HSlider.new()
+    scale_slider.min_value = 0.75
+    scale_slider.max_value = 1.35
+    scale_slider.step = 0.05
+    scale_slider.value = control_scale
+    scale_slider.value_changed.connect(_on_control_scale_changed)
+    column.add_child(scale_slider)
+
+    var layout_button := Button.new()
+    layout_button.text = "EDIT TOUCH BUTTONS"
+    layout_button.pressed.connect(_set_control_layout_edit.bind(true))
+    column.add_child(layout_button)
+
+    var done_layout_button := Button.new()
+    done_layout_button.text = "DONE / SAVE LAYOUT"
+    done_layout_button.pressed.connect(_finish_control_layout_edit)
+    column.add_child(done_layout_button)
+
+    var reset_layout_button := Button.new()
+    reset_layout_button.text = "RESET BUTTON POSITIONS"
+    reset_layout_button.pressed.connect(_reset_control_layout)
+    column.add_child(reset_layout_button)
+
+    layout_status_label = Label.new()
+    layout_status_label.text = "Move buttons and save your layout."
+    layout_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(layout_status_label)
+
+func _on_camera_sensitivity_changed(value: float) -> void:
+    camera_sensitivity = clampf(value, 0.003, 0.012)
+
+func _on_control_scale_changed(value: float) -> void:
+    control_scale = clampf(value, 0.75, 1.35)
+    for action in action_buttons:
+        var button: TouchScreenButton = action_buttons[action]
+        var caption: Label = action_captions[action]
+        button.scale = Vector2.ONE * control_scale
+        var shape := CircleShape2D.new()
+        shape.radius = 53.0 if str(action) in ["interact", "jump", "run"] else 47.0
+        button.shape = shape
+        caption.position = button.position - Vector2(42.0, 20.0) * control_scale
+        caption.size = Vector2(84.0, 40.0) * control_scale
+    for action in action_captions:
+        var caption: Label = action_captions[action]
+        caption.add_theme_font_size_override("font_size", roundi((14 if str(action) in ["interact", "jump", "run"] else 27) * control_scale))
+
+func _finish_control_layout_edit() -> void:
+    _set_control_layout_edit(false)
+    _save_game()
+
 func _input(event: InputEvent) -> void:
-    if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
-        _try_interact()
+    if event is InputEventKey and event.pressed and not event.echo:
+        if event.keycode == KEY_E:
+            _try_interact()
+        elif event.keycode == KEY_SHIFT:
+            pressed_actions["run"] = true
+    elif event is InputEventKey and not event.pressed and event.keycode == KEY_SHIFT:
+        pressed_actions.erase("run")
+    elif event is InputEventScreenTouch:
+        if control_layout_edit_mode:
+            if event.pressed:
+                var action := _action_button_at(event.position)
+                if action != "":
+                    layout_drag_action = action
+                    layout_touch_index = event.index
+                    get_viewport().set_input_as_handled()
+            elif event.index == layout_touch_index:
+                layout_drag_action = ""
+                layout_touch_index = -1
+                _save_game()
+                get_viewport().set_input_as_handled()
+        elif event.pressed and joystick_touch_index == -1 and event.position.distance_to(joystick_center) <= 82.0:
+            joystick_touch_index = event.index
+            _update_virtual_joystick(event.position)
+            get_viewport().set_input_as_handled()
+        elif not event.pressed and event.index == joystick_touch_index:
+            _reset_virtual_joystick()
+            get_viewport().set_input_as_handled()
     elif event is InputEventScreenDrag:
-        _rotate_camera(event.relative, event.position)
+        if control_layout_edit_mode and event.index == layout_touch_index and layout_drag_action != "":
+            _move_action_button(layout_drag_action, event.position)
+            get_viewport().set_input_as_handled()
+        elif event.index == joystick_touch_index:
+            _update_virtual_joystick(event.position)
+            get_viewport().set_input_as_handled()
+        else:
+            _rotate_camera(event.relative, event.position)
     elif event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
         _rotate_camera(event.relative, event.position)
 
@@ -613,6 +813,8 @@ func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
     if not camera or not camera_pivot:
         return
     if network_panel and network_panel.get_global_rect().has_point(pointer_position):
+        return
+    if settings_panel and settings_panel.get_global_rect().has_point(pointer_position):
         return
 
     var screen_size := get_viewport().get_visible_rect().size
@@ -635,6 +837,15 @@ func _process(delta: float) -> void:
     _update_network(delta)
     _update_remote_players(delta)
     _update_adaptive_quality(delta)
+    metrics_refresh_timer += delta
+    if metrics_refresh_timer >= 0.75 and metrics_label:
+        metrics_refresh_timer = 0.0
+        var current_memory_mb := Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0
+        metrics_label.text = "Live  •  %d FPS  •  %.0f MB memory  •  cap %d" % [
+            Engine.get_frames_per_second(),
+            current_memory_mb,
+            current_fps_target
+        ]
     save_elapsed += delta
     if save_elapsed >= 15.0:
         _save_game()
@@ -1076,12 +1287,14 @@ func _physics_process(delta: float) -> void:
     if not player or not camera:
         return
 
-    camera_pivot.global_position = player.global_position + Vector3(0, 1.55, 0)
+    var camera_target := player.global_position + Vector3(0, 1.55, 0)
+    camera_pivot.global_position = camera_pivot.global_position.lerp(camera_target, minf(1.0, delta * 16.0))
 
-    var horizontal := Vector2.ZERO
-    horizontal.x = float(Input.is_key_pressed(KEY_D) or _button_down("right")) - float(Input.is_key_pressed(KEY_A) or _button_down("left"))
-    horizontal.y = float(Input.is_key_pressed(KEY_S) or _button_down("back")) - float(Input.is_key_pressed(KEY_W) or _button_down("forward"))
-    horizontal = horizontal.normalized()
+    var horizontal := joystick_vector
+    horizontal.x += float(Input.is_key_pressed(KEY_D) or _button_down("right")) - float(Input.is_key_pressed(KEY_A) or _button_down("left"))
+    horizontal.y += float(Input.is_key_pressed(KEY_S) or _button_down("back")) - float(Input.is_key_pressed(KEY_W) or _button_down("forward"))
+    if horizontal.length() > 1.0:
+        horizontal = horizontal.normalized()
 
     var camera_forward := -camera.global_transform.basis.z
     var camera_right := camera.global_transform.basis.x
@@ -1093,8 +1306,10 @@ func _physics_process(delta: float) -> void:
     var direction := camera_right * horizontal.x - camera_forward * horizontal.y
     direction = direction.normalized()
 
-    player.velocity.x = direction.x * PLAYER_SPEED
-    player.velocity.z = direction.z * PLAYER_SPEED
+    var move_speed := PLAYER_SPEED * (1.48 if _button_down("run") or Input.is_key_pressed(KEY_SHIFT) else 1.0)
+    var target_horizontal_velocity := Vector2(direction.x, direction.z) * move_speed
+    player.velocity.x = move_toward(player.velocity.x, target_horizontal_velocity.x, 28.0 * delta)
+    player.velocity.z = move_toward(player.velocity.z, target_horizontal_velocity.y, 28.0 * delta)
 
     if not player.is_on_floor():
         player.velocity.y -= GRAVITY * delta
@@ -1439,6 +1654,11 @@ func _save_game() -> void:
     config.set_value("player", "thirst", thirst)
     config.set_value("player", "rest", rest)
     config.set_value("player", "position", player.global_position)
+    config.set_value("controls", "camera_sensitivity", camera_sensitivity)
+    config.set_value("controls", "button_scale", control_scale)
+    for action in action_buttons:
+        var button: TouchScreenButton = action_buttons[action]
+        config.set_value("controls", str(action), button.position)
 
     var berry_servings: Array[int] = []
     for bush in berry_bushes:
@@ -1462,6 +1682,13 @@ func _load_game() -> void:
     hunger = clampf(float(config.get_value("player", "hunger", hunger)), 0.0, 100.0)
     thirst = clampf(float(config.get_value("player", "thirst", thirst)), 0.0, 100.0)
     rest = clampf(float(config.get_value("player", "rest", rest)), 0.0, 100.0)
+    camera_sensitivity = clampf(float(config.get_value("controls", "camera_sensitivity", camera_sensitivity)), 0.003, 0.012)
+    control_scale = clampf(float(config.get_value("controls", "button_scale", control_scale)), 0.75, 1.35)
+    _on_control_scale_changed(control_scale)
+    for action in action_buttons:
+        var saved_control_position: Variant = config.get_value("controls", str(action), action_buttons[action].position)
+        if typeof(saved_control_position) == TYPE_VECTOR2:
+            _move_action_button(str(action), saved_control_position)
 
     var saved_position: Variant = config.get_value("player", "position", player.global_position)
     if typeof(saved_position) == TYPE_VECTOR3:
