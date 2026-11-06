@@ -204,6 +204,11 @@ func _create_environment() -> void:
     world_environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
     world_environment.ambient_light_color = Color(0.72, 0.82, 0.92)
     world_environment.ambient_light_energy = 0.65
+    world_environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+    world_environment.adjustment_enabled = true
+    world_environment.adjustment_brightness = 1.0
+    world_environment.adjustment_contrast = 1.045
+    world_environment.adjustment_saturation = 1.07
     world_environment.fog_enabled = true
     world_environment.fog_light_color = Color(0.61, 0.72, 0.70)
     world_environment.fog_density = 0.0025
