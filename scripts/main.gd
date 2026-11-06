@@ -4371,6 +4371,21 @@ func _start_gameplay_smoke_test() -> void:
         get_tree().quit(1)
         return
 
+    var smoke_original_position := player.global_position
+    var smoke_original_building_count := placed_buildings.size()
+    var smoke_original_crossing_flag := journey_visited_crossing
+    player.global_position = river_crossing_position + Vector3(0.0, 1.2, 0.0)
+    placed_buildings.append({"type": "cabin"})
+    journey_visited_crossing = false
+    var crossing_objective := _get_journey_objective()
+    placed_buildings.resize(smoke_original_building_count)
+    journey_visited_crossing = smoke_original_crossing_flag
+    player.global_position = smoke_original_position
+    if not crossing_objective.contains("Find the river crossing") or not crossing_objective.contains("0 m away"):
+        push_error("GAMEPLAY_SMOKE_FAIL: journey objective distance guidance did not update")
+        get_tree().quit(1)
+        return
+
     var first_animal_legs: Array = wildlife_agents[0].get("legs", [])
     if first_animal_legs.size() != 4:
         push_error("GAMEPLAY_SMOKE_FAIL: wildlife leg rig is incomplete")
