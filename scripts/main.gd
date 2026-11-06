@@ -3023,12 +3023,12 @@ func _create_build_panel(layer: CanvasLayer) -> void:
 
     var rotate_row := HBoxContainer.new()
     var rotate_left := Button.new()
-    rotate_left.text = "تدوير ‎-15°"
+    rotate_left.text = "تدوير -15°"
     rotate_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     rotate_left.pressed.connect(_rotate_build_preview.bind(-15.0))
     rotate_row.add_child(rotate_left)
     var rotate_right := Button.new()
-    rotate_right.text = "تدوير ‎+15°"
+    rotate_right.text = "تدوير +15°"
     rotate_right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     rotate_right.pressed.connect(_rotate_build_preview.bind(15.0))
     rotate_row.add_child(rotate_right)
