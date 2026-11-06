@@ -2200,6 +2200,16 @@ func _update_survival(delta: float) -> void:
         _show_status_note("You recovered at the campsite. Take supplies before leaving.")
         _save_game()
 
+func _objective_distance_text(target_position: Vector3) -> String:
+    if not player:
+        return ""
+    var distance := Vector2(
+        player.global_position.x - target_position.x,
+        player.global_position.z - target_position.z
+    ).length()
+    return "  •  %d m away" % roundi(distance)
+
+
 func _get_journey_objective() -> String:
     var cabin_owned := false
     for building in placed_buildings:
@@ -2215,11 +2225,26 @@ func _get_journey_objective() -> String:
             return "JOURNEY  •  Gather %d more fiber" % (6 - int(shared_inventory.get("fiber", 0)))
         return "JOURNEY  •  Open BUILD and place your timber cabin"
     if not journey_visited_crossing:
-        return "JOURNEY  •  Find the river crossing"
+        return "JOURNEY  •  Find the river crossing" + _objective_distance_text(river_crossing_position)
     if not journey_met_villager:
+        var nearest_villager_position := Vector3.ZERO
+        var nearest_villager_distance := INF
+        for villager in village_agents:
+            var villager_root: Node3D = villager.get("root")
+            if not is_instance_valid(villager_root):
+                continue
+            var distance := Vector2(
+                player.global_position.x - villager_root.global_position.x,
+                player.global_position.z - villager_root.global_position.z
+            ).length()
+            if distance < nearest_villager_distance:
+                nearest_villager_distance = distance
+                nearest_villager_position = villager_root.global_position
+        if nearest_villager_distance < INF:
+            return "JOURNEY  •  Talk to a villager" + _objective_distance_text(nearest_villager_position)
         return "JOURNEY  •  Talk to a villager"
     if not memory_awakened:
-        return "JOURNEY  •  Find the ancient memory stone"
+        return "JOURNEY  •  Find the ancient memory stone" + _objective_distance_text(memory_position)
     return "JOURNEY  •  Follow the glowing memory trail"
 
 func _get_interaction_prompt() -> String:
