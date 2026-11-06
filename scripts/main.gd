@@ -83,6 +83,12 @@ var camera_distance := 7.0
 var camera_fov := 70.0
 var button_opacity := 0.82
 var control_scale := 1.0
+var minimap_panel: PanelContainer
+var minimap_background: TextureRect
+var minimap_marker: Polygon2D
+var minimap_region_label: Label
+var minimap_toggle_button: Button
+var minimap_size := 176.0
 var control_layout_edit_mode := false
 var layout_drag_action := ""
 var layout_touch_index := -1
@@ -720,6 +726,7 @@ func _create_hud() -> void:
     _create_network_panel(layer)
     _create_settings_panel(layer)
     _create_build_panel(layer)
+    _create_minimap(layer)
 
 func _create_virtual_joystick(screen_size: Vector2) -> void:
     joystick_center = Vector2(screen_size.x * 0.16, screen_size.y * 0.79)
@@ -854,6 +861,111 @@ func _on_control_pressed(action: String) -> void:
 
 func _on_control_released(action: String) -> void:
     pressed_actions.erase(action)
+
+func _create_minimap(layer: CanvasLayer) -> void:
+    var map_image := Image.create(192, 192, false, Image.FORMAT_RGBA8)
+    for y in range(192):
+        for x in range(192):
+            var world_x := (float(x) / 191.0 - 0.5) * WORLD_SIZE
+            var world_z := (float(y) / 191.0 - 0.5) * WORLD_SIZE
+            var pixel_color := Color(0.20, 0.39, 0.18)
+            if world_x > 125.0:
+                pixel_color = Color(0.66, 0.53, 0.31)
+            if world_z < -125.0:
+                pixel_color = Color(0.76, 0.82, 0.83)
+            var river_center := sin(world_z * 0.018) * 18.0
+            if absf(world_x - river_center) < 5.0:
+                pixel_color = Color(0.10, 0.40, 0.58)
+            map_image.set_pixel(x, y, pixel_color)
+
+    var map_texture := ImageTexture.create_from_image(map_image)
+    minimap_panel = PanelContainer.new()
+    minimap_panel.name = "WorldMinimap"
+    minimap_panel.position = Vector2(get_viewport().get_visible_rect().size.x * 0.5 - 96.0, 58.0)
+    minimap_panel.custom_minimum_size = Vector2(192.0, 218.0)
+    layer.add_child(minimap_panel)
+
+    var map_column := VBoxContainer.new()
+    map_column.add_theme_constant_override("separation", 3)
+    minimap_panel.add_child(map_column)
+
+    var header := HBoxContainer.new()
+    map_column.add_child(header)
+
+    var title := Label.new()
+    title.text = "WORLD MAP"
+    title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    title.add_theme_font_size_override("font_size", 14)
+    header.add_child(title)
+
+    minimap_region_label = Label.new()
+    minimap_region_label.text = "Green Valley"
+    minimap_region_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    minimap_region_label.add_theme_font_size_override("font_size", 12)
+    map_column.add_child(minimap_region_label)
+
+    var map_frame := Control.new()
+    map_frame.custom_minimum_size = Vector2(minimap_size, minimap_size)
+    map_frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+    map_column.add_child(map_frame)
+
+    minimap_background = TextureRect.new()
+    minimap_background.texture = map_texture
+    minimap_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    minimap_background.stretch_mode = TextureRect.STRETCH_SCALE
+    minimap_background.size = Vector2(minimap_size, minimap_size)
+    map_frame.add_child(minimap_background)
+
+    var border := ReferenceRect.new()
+    border.border_color = Color(0.85, 0.89, 0.79, 0.85)
+    border.editor_only = false
+    border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    border.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    map_frame.add_child(border)
+
+    minimap_marker = Polygon2D.new()
+    minimap_marker.name = "PlayerMapArrow"
+    minimap_marker.polygon = PackedVector2Array([
+        Vector2(0.0, -7.0),
+        Vector2(5.5, 6.0),
+        Vector2(0.0, 3.2),
+        Vector2(-5.5, 6.0)
+    ])
+    minimap_marker.color = Color(1.0, 0.93, 0.54)
+    minimap_marker.position = Vector2(minimap_size * 0.5, minimap_size * 0.5)
+    minimap_background.add_child(minimap_marker)
+
+    minimap_toggle_button = Button.new()
+    minimap_toggle_button.name = "ToggleWorldMap"
+    minimap_toggle_button.text = "MAP  •  HIDE"
+    minimap_toggle_button.position = Vector2(get_viewport().get_visible_rect().size.x * 0.5 - 72.0, 18.0)
+    minimap_toggle_button.custom_minimum_size = Vector2(144.0, 34.0)
+    minimap_toggle_button.pressed.connect(_toggle_minimap)
+    layer.add_child(minimap_toggle_button)
+    _update_minimap()
+
+func _toggle_minimap() -> void:
+    if not minimap_panel:
+        return
+    minimap_panel.visible = not minimap_panel.visible
+    if minimap_toggle_button:
+        minimap_toggle_button.text = "MAP  •  HIDE" if minimap_panel.visible else "MAP  •  SHOW"
+
+func _update_minimap() -> void:
+    if not player or not minimap_marker:
+        return
+    var half_world := WORLD_SIZE * 0.5
+    var normalized_x := clampf((player.global_position.x + half_world) / WORLD_SIZE, 0.0, 1.0)
+    var normalized_z := clampf((player.global_position.z + half_world) / WORLD_SIZE, 0.0, 1.0)
+    minimap_marker.position = Vector2(normalized_x * minimap_size, normalized_z * minimap_size)
+    minimap_marker.rotation = player.rotation.y
+    if minimap_region_label:
+        if player.global_position.x > 125.0:
+            minimap_region_label.text = "Eastern Dunes"
+        elif player.global_position.z < -125.0:
+            minimap_region_label.text = "Northern Highlands"
+        else:
+            minimap_region_label.text = "Green Valley"
 
 func _create_network_panel(layer: CanvasLayer) -> void:
     var screen_size := get_viewport().get_visible_rect().size
@@ -1163,6 +1275,8 @@ func _process(delta: float) -> void:
     _update_remote_players(delta)
     _update_adaptive_quality(delta)
     metrics_refresh_timer += delta
+    if minimap_marker and player:
+        _update_minimap()
     if metrics_refresh_timer >= 0.75 and metrics_label:
         metrics_refresh_timer = 0.0
         var current_fps := Engine.get_frames_per_second()
