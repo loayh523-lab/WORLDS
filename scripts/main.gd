@@ -1524,6 +1524,7 @@ func _process(delta: float) -> void:
     _update_remote_players(delta)
     _update_build_preview()
     _update_wildlife(delta)
+    _animate_wildlife_limbs(delta)
     _update_village_agents(delta)
     _animate_villager_limbs(delta)
     _update_adaptive_quality(delta)
@@ -2578,6 +2579,7 @@ func _create_wildlife() -> void:
             antler_branch.material_override = antler_material
             root.add_child(antler_branch)
 
+        var animal_legs: Array[MeshInstance3D] = []
         for leg_x in [-0.23, 0.23]:
             for leg_z in [-0.43, 0.39]:
                 var leg := MeshInstance3D.new()
@@ -2589,6 +2591,7 @@ func _create_wildlife() -> void:
                 leg.position = Vector3(leg_x, 0.43, leg_z)
                 leg.material_override = dark_coat
                 root.add_child(leg)
+                animal_legs.append(leg)
 
         var tail := MeshInstance3D.new()
         var tail_mesh := SphereMesh.new()
@@ -2603,7 +2606,10 @@ func _create_wildlife() -> void:
             "root": root,
             "target": Vector3(x, _height_at(x, z), z),
             "timer": wildlife_rng.randf_range(1.0, 4.0),
-            "speed": wildlife_rng.randf_range(0.9, 1.35)
+            "speed": wildlife_rng.randf_range(0.9, 1.35),
+            "legs": animal_legs,
+            "phase": wildlife_rng.randf_range(0.0, TAU),
+            "walking": false
         })
     _create_small_wildlife("Rabbit", 8, Color(0.55, 0.45, 0.35), 0.55, 1.35)
     _create_small_wildlife("Fox", 5, Color(0.65, 0.27, 0.10), 0.82, 1.75)
@@ -2652,6 +2658,7 @@ func _create_small_wildlife(species: String, count: int, coat_color: Color, size
             ear.rotation.z = side * 0.16
             ear.material_override = dark
             root.add_child(ear)
+        var animal_legs: Array[MeshInstance3D] = []
         for leg_x in [-0.25, 0.25]:
             for leg_z in [-0.36, 0.34]:
                 var leg := MeshInstance3D.new()
@@ -2663,6 +2670,7 @@ func _create_small_wildlife(species: String, count: int, coat_color: Color, size
                 leg.position = Vector3(leg_x * size_scale, 0.20 * size_scale, leg_z * size_scale)
                 leg.material_override = dark
                 root.add_child(leg)
+                animal_legs.append(leg)
         var tail := MeshInstance3D.new()
         var tail_mesh := SphereMesh.new()
         tail_mesh.radius = (0.16 if species == "Fox" else 0.10) * size_scale
@@ -2675,7 +2683,10 @@ func _create_small_wildlife(species: String, count: int, coat_color: Color, size
             "root": root,
             "target": root.position,
             "timer": wildlife_rng.randf_range(1.0, 4.0),
-            "speed": move_speed * wildlife_rng.randf_range(0.8, 1.2)
+            "speed": move_speed * wildlife_rng.randf_range(0.8, 1.2),
+            "legs": animal_legs,
+            "phase": wildlife_rng.randf_range(0.0, TAU),
+            "walking": false
         })
 
 func _village_box(parent: Node3D, node_name: String, size: Vector3, position: Vector3, material: Material) -> MeshInstance3D:
@@ -3021,6 +3032,28 @@ func _animate_villager_limbs(delta: float) -> void:
         villager["phase"] = phase
         village_agents[index] = villager
 
+func _animate_wildlife_limbs(delta: float) -> void:
+    for index in range(wildlife_agents.size()):
+        var animal: Dictionary = wildlife_agents[index]
+        var root: Node3D = animal.get("root")
+        if not is_instance_valid(root) or not root.visible:
+            continue
+        var legs: Array = animal.get("legs", [])
+        if legs.size() < 4:
+            continue
+        var phase := float(animal.get("phase", 0.0))
+        var swing := 0.0
+        if bool(animal.get("walking", false)):
+            phase += delta * float(animal.get("speed", 1.0)) * 7.0
+            swing = sin(phase) * 0.38
+        for leg_index in range(legs.size()):
+            var leg := legs[leg_index] as MeshInstance3D
+            if is_instance_valid(leg):
+                var target_angle := swing if leg_index % 2 == 0 else -swing
+                leg.rotation.x = lerpf(leg.rotation.x, target_angle, minf(1.0, delta * 10.0))
+        animal["phase"] = phase
+        wildlife_agents[index] = animal
+
 func _constrain_wildlife_target(target: Vector3, origin: Vector3) -> Vector3:
     # Deer remain in the temperate valley and do not deliberately route through deep water.
     target.x = clampf(target.x, -135.0, 135.0)
@@ -3058,6 +3091,7 @@ func _update_wildlife(delta: float) -> void:
             var distance_squared := root.global_position.distance_squared_to(player.global_position)
             # Keep distant wildlife out of the render and AI workload on mobile.
             if distance_squared > 120.0 * 120.0:
+                animal["walking"] = false
                 root.visible = false
                 animal["timer"] = maxf(0.0, timer)
                 wildlife_agents[index] = animal
@@ -3092,7 +3126,9 @@ func _update_wildlife(delta: float) -> void:
         target = _constrain_wildlife_target(target, root.position)
         var direction := Vector3(target.x - root.position.x, 0.0, target.z - root.position.z)
         var animal_speed := 3.8 if fleeing else float(animal["speed"])
-        if direction.length() > 0.1:
+        var is_walking := direction.length() > 0.1
+        animal["walking"] = is_walking
+        if is_walking:
             var movement := direction.normalized() * animal_speed * step_delta
             root.position.x += movement.x
             root.position.z += movement.z
