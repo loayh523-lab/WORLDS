@@ -59,6 +59,7 @@ var camp_position := Vector3.ZERO
 var village_well_position := Vector3.ZERO
 var river_pavilion_position := Vector3.ZERO
 var river_crossing_position := Vector3.ZERO
+var valley_lookout_position := Vector3.ZERO
 var memory_position := Vector3.ZERO
 var memory_awakened := false
 var status_note := ""
@@ -148,6 +149,8 @@ func _ready() -> void:
     print("WORLDS_STAGE village")
     _create_riverfront_landmarks()
     print("WORLDS_STAGE riverfront_landmarks")
+    _create_valley_lookout()
+    print("WORLDS_STAGE valley_lookout")
     _create_campsite()
     print("WORLDS_STAGE campsite")
     _create_memory_stone()
@@ -1016,6 +1019,7 @@ func _create_minimap(layer: CanvasLayer) -> void:
     _paint_map_marker(map_image, village_well_position, Color(0.98, 0.79, 0.32), 3)
     _paint_map_marker(map_image, river_pavilion_position, Color(0.30, 0.94, 0.80), 3)
     _paint_map_marker(map_image, river_crossing_position, Color(0.92, 0.91, 0.76), 2)
+    _paint_map_marker(map_image, valley_lookout_position, Color(1.0, 0.74, 0.35), 3)
     var map_texture := ImageTexture.create_from_image(map_image)
     minimap_panel = PanelContainer.new()
     minimap_panel.name = "WorldMinimap"
@@ -3032,6 +3036,148 @@ func _create_riverfront_landmarks() -> void:
             canopy.material_override = _build_material(Color(0.23, 0.40, 0.22).lerp(Color(0.38, 0.52, 0.28), float(canopy_index) * 0.12))
             willow.add_child(canopy)
 
+
+func _create_valley_lookout() -> void:
+    # A quiet high-ground destination reached from the river pavilion by a stone path.
+    var platform_x := 110.0
+    var platform_z := 70.0
+    valley_lookout_position = Vector3(platform_x, _height_at(platform_x, platform_z), platform_z)
+    var stone := _build_material(Color(0.49, 0.51, 0.47))
+    var stone_light := _build_material(Color(0.64, 0.62, 0.52))
+    var dark_wood := _build_material(Color(0.25, 0.17, 0.11))
+    var warm_wood := _build_material(Color(0.48, 0.33, 0.20))
+    var banner_material := _build_material(Color(0.70, 0.36, 0.18))
+    var brass := _build_material(Color(0.72, 0.57, 0.27), true)
+
+    for path_index in range(18):
+        var progress := float(path_index) / 17.0
+        var path_x := lerpf(river_pavilion_position.x + 8.0, platform_x - 8.0, progress)
+        var path_z := platform_z + sin(progress * PI) * 6.0
+        var slab := _village_box(
+            self,
+            "Lookout_Stone_Path",
+            Vector3(2.8, 0.16, 2.0),
+            Vector3(path_x, _height_at(path_x, path_z) + 0.10, path_z),
+            stone_light if path_index % 3 == 0 else stone
+        )
+        slab.rotation.y = sin(progress * PI * 2.0) * 0.06
+
+    var overlook := Node3D.new()
+    overlook.name = "Valleywatch_Overlook"
+    overlook.position = valley_lookout_position
+    add_child(overlook)
+
+    var plinth := MeshInstance3D.new()
+    var plinth_mesh := CylinderMesh.new()
+    plinth_mesh.top_radius = 8.4
+    plinth_mesh.bottom_radius = 9.0
+    plinth_mesh.height = 0.72
+    plinth_mesh.radial_segments = 24
+    plinth.mesh = plinth_mesh
+    plinth.position.y = 0.36
+    plinth.material_override = stone
+    overlook.add_child(plinth)
+
+    var platform_top := MeshInstance3D.new()
+    var platform_top_mesh := CylinderMesh.new()
+    platform_top_mesh.top_radius = 7.9
+    platform_top_mesh.bottom_radius = 7.9
+    platform_top_mesh.height = 0.16
+    platform_top_mesh.radial_segments = 24
+    platform_top.mesh = platform_top_mesh
+    platform_top.position.y = 0.80
+    platform_top.material_override = stone_light
+    overlook.add_child(platform_top)
+
+    for ring_index in range(12):
+        var ring_angle := TAU * float(ring_index) / 12.0
+        var ring_position := Vector3(cos(ring_angle) * 7.65, 0.93, sin(ring_angle) * 7.65)
+        var border_stone := _village_box(overlook, "Overlook_Rim_Stone", Vector3(2.85, 0.34, 0.48), ring_position, stone)
+        border_stone.rotation.y = ring_angle + PI * 0.5
+
+    for post_index in range(4):
+        var post_angle := PI * 0.25 + float(post_index) * PI * 0.5
+        var post_position := Vector3(cos(post_angle) * 5.9, 3.55, sin(post_angle) * 5.9)
+        var pillar := MeshInstance3D.new()
+        var pillar_mesh := CylinderMesh.new()
+        pillar_mesh.top_radius = 0.24
+        pillar_mesh.bottom_radius = 0.36
+        pillar_mesh.height = 5.2
+        pillar.mesh = pillar_mesh
+        pillar.position = post_position
+        pillar.material_override = stone_light
+        overlook.add_child(pillar)
+        var capital := _village_box(overlook, "Overlook_Pillar_Capital", Vector3(0.86, 0.30, 0.86), post_position + Vector3(0.0, 2.75, 0.0), warm_wood)
+        capital.rotation.y = post_angle
+        if post_index == 0 or post_index == 2:
+            var banner := _village_box(overlook, "Overlook_Banner", Vector3(0.10, 2.05, 1.35), post_position + Vector3(0.0, 1.28, 0.0), banner_material)
+            banner.rotation.y = post_angle + PI * 0.5
+            _village_box(overlook, "Overlook_Banner_Tassel", Vector3(0.12, 0.18, 1.55), banner.position + Vector3(0.0, -1.03, 0.0), brass)
+
+    for beam_index in range(4):
+        var beam_angle := PI * 0.25 + float(beam_index) * PI * 0.5
+        var beam := _village_box(
+            overlook,
+            "Overlook_Top_Beam",
+            Vector3(8.9, 0.28, 0.34),
+            Vector3(cos(beam_angle) * 3.05, 6.05, sin(beam_angle) * 3.05),
+            dark_wood
+        )
+        beam.rotation.y = beam_angle + PI * 0.5
+
+    for bench_angle in [PI, 0.0]:
+        var bench_position := Vector3(cos(bench_angle) * 4.15, 1.15, sin(bench_angle) * 4.15)
+        var bench_seat := _village_box(overlook, "Lookout_Bench_Seat", Vector3(3.0, 0.24, 0.72), bench_position, warm_wood)
+        bench_seat.rotation.y = bench_angle + PI * 0.5
+        var bench_back := _village_box(overlook, "Lookout_Bench_Back", Vector3(3.0, 0.95, 0.18), bench_position + Vector3(0.0, 0.58, 0.48), dark_wood)
+        bench_back.rotation.y = bench_angle + PI * 0.5
+
+    var telescope_mount := MeshInstance3D.new()
+    var mount_mesh := CylinderMesh.new()
+    mount_mesh.top_radius = 0.16
+    mount_mesh.bottom_radius = 0.20
+    mount_mesh.height = 1.35
+    telescope_mount.mesh = mount_mesh
+    telescope_mount.position = Vector3(0.0, 1.48, -2.2)
+    telescope_mount.material_override = dark_wood
+    overlook.add_child(telescope_mount)
+    var telescope := MeshInstance3D.new()
+    var telescope_mesh := CylinderMesh.new()
+    telescope_mesh.top_radius = 0.22
+    telescope_mesh.bottom_radius = 0.31
+    telescope_mesh.height = 2.2
+    telescope.mesh = telescope_mesh
+    telescope.position = Vector3(0.0, 2.38, -2.2)
+    telescope.rotation.x = PI * 0.5 - 0.22
+    telescope.material_override = brass
+    overlook.add_child(telescope)
+    var lens := MeshInstance3D.new()
+    var lens_mesh := SphereMesh.new()
+    lens_mesh.radius = 0.23
+    lens_mesh.height = 0.08
+    lens.mesh = lens_mesh
+    lens.position = Vector3(0.0, 2.56, -3.24)
+    lens.material_override = _build_material(Color(0.13, 0.36, 0.48), true)
+    overlook.add_child(lens)
+
+    var beacon := OmniLight3D.new()
+    beacon.name = "Overlook_Beacon"
+    beacon.position = Vector3(0.0, 6.25, 0.0)
+    beacon.light_color = Color(1.0, 0.72, 0.39)
+    beacon.light_energy = 0.42
+    beacon.omni_range = 9.0
+    overlook.add_child(beacon)
+
+    var platform_body := StaticBody3D.new()
+    var platform_collision := CollisionShape3D.new()
+    var platform_shape := CylinderShape3D.new()
+    platform_shape.radius = 8.0
+    platform_shape.height = 0.9
+    platform_collision.shape = platform_shape
+    platform_collision.position.y = 0.36
+    platform_body.add_child(platform_collision)
+    overlook.add_child(platform_body)
+
 func _create_campsite() -> void:
     camp_position = Vector3(18.0, _height_at(18.0, 0.0), 0.0)
 
@@ -3569,6 +3715,10 @@ func _start_gameplay_smoke_test() -> void:
         return
     if village_agents.size() < 8 or _villager_dialogue(0).is_empty():
         push_error("GAMEPLAY_SMOKE_FAIL: villager interaction content is missing")
+        get_tree().quit(1)
+        return
+    if get_node_or_null("Valleywatch_Overlook") == null:
+        push_error("GAMEPLAY_SMOKE_FAIL: valley lookout landmark was not created")
         get_tree().quit(1)
         return
     if get_node_or_null("Village_Well") == null:
