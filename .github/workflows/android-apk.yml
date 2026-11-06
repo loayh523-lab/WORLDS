@@ -10,6 +10,14 @@ on:
       - "scenes/**"
       - "scripts/**"
       - ".github/workflows/android-apk.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "project.godot"
+      - "export_presets.cfg"
+      - "scenes/**"
+      - "scripts/**"
+      - ".github/workflows/android-apk.yml"
 
 permissions:
   contents: read
@@ -83,6 +91,9 @@ jobs:
           godot --headless --editor --path . --quit
           godot --headless --path . --export-debug "Android" build/WORLDS-debug.apk
           test -s build/WORLDS-debug.apk
+          APK_BYTES=$(stat -c%s build/WORLDS-debug.apk)
+          echo "Debug APK size: $APK_BYTES bytes"
+          test "$APK_BYTES" -le 734003200
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

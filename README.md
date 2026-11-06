@@ -1,41 +1,38 @@
 # WORLDS
 
-An original open-world adventure project built with Godot 4, targeting Android first and PC later.
+An original 3D open-world adventure prototype built with Godot 4.3, targeting Android first.
 
 ## Current prototype
+- Procedural 512 × 512 metre starter region with hills, river valley, forest, dryland and snowy highland areas.
+- Third-person player with mobile joystick, independent camera drag, sprint, jump and interaction controls.
+- Stylized player details, simple NPCs and wildlife, village landmarks, day/night cycle and drifting cloud layer.
+- Survival needs, berry/resource gathering, crafting, building, local autosave and the World Memory discovery.
+- Main menu, player naming, logo, settings, performance presets, FPS caps, camera and touch-control customization.
+- Experimental Wi-Fi co-op: one phone hosts and other phones join by entering the host's local IP. ENet/UDP, player movement/name synchronization and basic shared world state.
+- Session capacity configured for 1 host + up to 7 guests; physical testing is still pending.
 
-The repository contains an early 3D playable-scene prototype:
-- Procedural rolling terrain, a winding river valley, and a small forest.
-- Instanced tree meshes to reduce scene-object overhead.
-- A stylized humanoid placeholder with a basic walk cycle and a separate orbit camera.
-- Keyboard movement, jump, touch movement controls, and camera drag.
-- A basic day/night cycle (one in-game day is 20 real minutes).
-- Early survival interactions: drink from the river, gather wild berries, and rest at a campsite.
-- A first experiment with the **World Memory** idea: awaken a memory stone to reveal a glowing trail through the landscape.
+## Play together over Wi-Fi
+1. Connect both Android phones to the same Wi-Fi network.
+2. On the host phone choose **PLAY WITH A FRIEND** → **CREATE WORLD**.
+3. Press **COPY HOST IP**.
+4. On the second phone choose **PLAY WITH A FRIEND**, enter the host IP, then press **JOIN WORLD**.
+5. See [the Arabic Wi-Fi playtest guide](docs/LAN_PLAYTEST_AR.md) for connection troubleshooting.
 
-These systems are prototypes, not a finished game. Final character art, polished environments, animals, weather, deeper survival, building, persistent world changes, saves, and multiplayer are not implemented yet.
+This is direct local-network play only. Public server lists, internet matchmaking, dedicated servers, accounts, and cloud-hosted persistent worlds are deferred. The host phone must remain in the session; closing the host ends the session.
 
-## Download a test build
+## World and prototype limits
+The current map is 512 × 512 metres, split into four terrain tiles. The planned 4 × 4 km world and dynamic streaming are not implemented. The project is not a finished or store-ready game. Final art, deeper NPC/animal behaviour, weather, seasons, sound, wider gameplay progression, and physical-device validation remain outstanding.
 
-A 64-bit Android debug APK has been exported successfully by GitHub Actions. The build is for testing only and has not yet been verified on a physical Android device. The APK is generated with a temporary debug signing key and is not a release-store build.
-
-Open the [Android debug APK workflow](https://github.com/loayh523-lab/WORLDS/actions/workflows/android-apk.yml), select its latest successful run, and download the `WORLDS-android-debug` artifact.
+## Performance
+- Android-first GL Compatibility renderer.
+- Quality presets and selectable 20/30/45/60/90/120 FPS caps. A cap is not a guarantee of achieved FPS.
+- The target performance on a Helio G99 has not been measured on a physical device.
+- See [performance and size targets](docs/PERFORMANCE_AND_SIZE_TARGETS.md).
 
 ## Open the project
+1. Install Godot 4.3.
+2. Download or clone this repository.
+3. Import the folder containing `project.godot`.
+4. Open `scenes/main.tscn` and run the project.
 
-1. Install Godot 4.3 or a compatible Godot 4 release.
-2. Download this repository as a ZIP or clone it.
-3. In Godot, choose **Import** and select the folder containing `project.godot`.
-4. Open `scenes/main.tscn` and press **Run Project**.
-
-## Controls
-
-- Keyboard: WASD to move, Space to jump, E to interact.
-- Touch: use the on-screen directional buttons, Jump, and Use.
-- Camera: drag in the upper-right area of the screen. On desktop, hold the right mouse button and move the mouse.
-
-## Automated checks
-
-GitHub Actions runs a headless project import and a short main-scene smoke test. A separate workflow installs Android build tools and matching Godot export templates, then exports a 64-bit debug APK. A successful CI run does not replace testing on a physical phone.
-
-See [Project Status](docs/PROJECT_STATUS.md) for implemented features and next milestones, and [Gameplay Vision (Arabic)](docs/GAMEPLAY_VISION_AR.md) for the evolving game identity.
+The GitHub Actions workflow can validate project import, gameplay/LAN smoke tests, and export an Android debug APK. A successful CI build does not prove real-device launch, performance, or Wi-Fi connectivity.

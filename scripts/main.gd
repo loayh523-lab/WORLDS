@@ -1,13 +1,24 @@
 extends Node3D
 
-const WORLD_SIZE := 120.0
-const GRID_STEPS := 100
+const WORLD_SIZE := 512.0
+const GRID_STEPS := 160
 const PLAYER_SPEED := 7.0
 const GRAVITY := 22.0
 const JUMP_VELOCITY := 8.0
 const CAMERA_DRAG_SENSITIVITY := 0.006
+const LAN_PORT := 24560
+const LAN_MAX_CLIENTS := 7
+const NETWORK_SEND_INTERVAL := 0.05
+const SAVE_PATH := "user://worlds_save.cfg"
 
 var player: CharacterBody3D
+var player_name := "Wanderer"
+var player_name_input: LineEdit
+var outfit_option: OptionButton
+var player_outfit_index := 0
+var player_torso: MeshInstance3D
+var network_player_outfits: Dictionary = {1: 0}
+var master_volume_slider: HSlider
 var camera_pivot: Node3D
 var camera: Camera3D
 var left_arm: MeshInstance3D
@@ -17,35 +28,281 @@ var right_leg: MeshInstance3D
 var gait_time := 0.0
 var pressed_actions: Dictionary = {}
 var hud_label: Label
+var health_bar: ProgressBar
+var survival_bars: Dictionary = {}
 var mobile_controls: Control
 var world_environment: Environment
 var sky_material: ProceduralSkyMaterial
+var cloud_layer: MultiMeshInstance3D
 var sun_light: DirectionalLight3D
+var tree_trunks: MultiMeshInstance3D
+var tree_canopies: MultiMeshInstance3D
+var pine_trunks: MultiMeshInstance3D
+var pine_canopies: MultiMeshInstance3D
+var grass_field: MultiMeshInstance3D
+var rock_field: MultiMeshInstance3D
+var total_tree_instances := 0
+var total_pine_instances := 0
+var total_grass_instances := 0
+var total_rock_instances := 0
+var current_tree_density := 1.0
 var world_clock := 8.0
+var health := 100.0
 var hunger := 100.0
 var thirst := 100.0
 var rest := 100.0
+var stamina := 100.0
+var journey_visited_crossing := false
+var journey_met_villager := false
 var berry_bushes: Array[Dictionary] = []
+var resource_nodes: Array[Dictionary] = []
+var wildlife_agents: Array[Dictionary] = []
+var village_agents: Array[Dictionary] = []
+var wildlife_rng := RandomNumberGenerator.new()
+var shared_inventory: Dictionary = {"wood": 0, "stone": 0, "fiber": 0}
+var placed_buildings: Array[Dictionary] = []
+var inventory_label: Label
+var build_panel: PanelContainer
+var build_recipe_buttons: Dictionary = {}
+var build_rotation_offset := 0.0
+var build_preview: MeshInstance3D
+var build_preview_material: StandardMaterial3D
 var camp_position := Vector3.ZERO
+var village_well_position := Vector3.ZERO
+var river_pavilion_position := Vector3.ZERO
+var river_crossing_position := Vector3.ZERO
+var valley_lookout_position := Vector3.ZERO
 var memory_position := Vector3.ZERO
 var memory_awakened := false
 var status_note := ""
 var status_note_time := 0.0
+var touch_button_layer: Node2D
+var normal_touch_texture: Texture2D
+var pressed_touch_texture: Texture2D
+var network_panel: PanelContainer
+var network_status_label: Label
+var host_ip_label: Label
+var address_input: LineEdit
+var quality_option: OptionButton
+var fps_option: OptionButton
+var fps_label: Label
+var lan_active := false
+var network_send_timer := 0.0
+var network_remote_players: Dictionary = {}
+var network_remote_targets: Dictionary = {}
+var network_player_names: Dictionary = {1: "Wanderer"}
+var memory_crystal: MeshInstance3D
+var save_elapsed := 0.0
+var quality_index := 0
+var current_render_scale := 0.76
+var adaptive_check_timer := 0.0
+var wildlife_update_accumulator := 0.0
+var village_update_accumulator := 0.0
+var hud_refresh_timer := 0.0
+var current_fps_target := 60
+var lan_smoke_client_passed := false
+var joystick_base: TextureRect
+var joystick_knob: TextureRect
+var joystick_center := Vector2.ZERO
+var joystick_vector := Vector2.ZERO
+var joystick_touch_index := -1
+var camera_touch_index := -1
+var camera_sensitivity := CAMERA_DRAG_SENSITIVITY
+var camera_distance := 7.0
+var camera_fov := 70.0
+var button_opacity := 0.82
+var control_scale := 1.0
+var minimap_panel: PanelContainer
+var minimap_background: TextureRect
+var minimap_marker: Polygon2D
+var minimap_region_label: Label
+var minimap_toggle_button: Button
+var minimap_size := 176.0
+var control_layout_edit_mode := false
+var layout_drag_action := ""
+var layout_touch_index := -1
+var action_buttons: Dictionary = {}
+var action_captions: Dictionary = {}
+var main_menu_layer: CanvasLayer
+var main_menu_panel: PanelContainer
+var settings_return_button: Button
+var settings_panel: PanelContainer
+var layout_status_label: Label
+var metrics_label: Label
+var camera_sensitivity_slider: HSlider
+var camera_distance_slider: HSlider
+var camera_fov_slider: HSlider
+var control_scale_slider: HSlider
+var button_opacity_slider: HSlider
+var metrics_refresh_timer := 0.0
+var game_ui_theme: Theme
+
+func _create_game_ui_theme() -> Theme:
+    var theme := Theme.new()
+
+    var panel_style := StyleBoxFlat.new()
+    panel_style.bg_color = Color(0.018, 0.052, 0.045, 0.97)
+    panel_style.border_color = Color(0.46, 0.36, 0.19, 0.88)
+    panel_style.set_border_width_all(1)
+    panel_style.set_corner_radius_all(15)
+    panel_style.content_margin_left = 16.0
+    panel_style.content_margin_right = 16.0
+    panel_style.content_margin_top = 13.0
+    panel_style.content_margin_bottom = 13.0
+    panel_style.shadow_color = Color(0.0, 0.0, 0.0, 0.30)
+    panel_style.shadow_size = 10
+    panel_style.shadow_offset = Vector2(0.0, 3.0)
+    theme.set_stylebox("panel", "PanelContainer", panel_style)
+
+    var button_normal := StyleBoxFlat.new()
+    button_normal.bg_color = Color(0.055, 0.13, 0.105, 0.98)
+    button_normal.border_color = Color(0.39, 0.34, 0.21, 0.82)
+    button_normal.set_border_width_all(1)
+    button_normal.set_corner_radius_all(10)
+    button_normal.content_margin_left = 13.0
+    button_normal.content_margin_right = 13.0
+    button_normal.content_margin_top = 8.0
+    button_normal.content_margin_bottom = 8.0
+
+    var button_hover := StyleBoxFlat.new()
+    button_hover.bg_color = Color(0.085, 0.19, 0.145, 1.0)
+    button_hover.border_color = Color(0.76, 0.62, 0.32, 0.95)
+    button_hover.set_border_width_all(1)
+    button_hover.set_corner_radius_all(10)
+    button_hover.content_margin_left = 13.0
+    button_hover.content_margin_right = 13.0
+    button_hover.content_margin_top = 8.0
+    button_hover.content_margin_bottom = 8.0
+
+    var button_pressed := StyleBoxFlat.new()
+    button_pressed.bg_color = Color(0.11, 0.24, 0.17, 1.0)
+    button_pressed.border_color = Color(0.83, 0.68, 0.36, 1.0)
+    button_pressed.set_border_width_all(1)
+    button_pressed.set_corner_radius_all(10)
+    button_pressed.content_margin_left = 13.0
+    button_pressed.content_margin_right = 13.0
+    button_pressed.content_margin_top = 8.0
+    button_pressed.content_margin_bottom = 8.0
+
+    var button_disabled := StyleBoxFlat.new()
+    button_disabled.bg_color = Color(0.045, 0.075, 0.065, 0.82)
+    button_disabled.border_color = Color(0.20, 0.25, 0.21, 0.50)
+    button_disabled.set_border_width_all(1)
+    button_disabled.set_corner_radius_all(10)
+
+    for control_type in ["Button", "OptionButton"]:
+        theme.set_stylebox("normal", control_type, button_normal)
+        theme.set_stylebox("hover", control_type, button_hover)
+        theme.set_stylebox("pressed", control_type, button_pressed)
+        theme.set_stylebox("disabled", control_type, button_disabled)
+
+    var input_normal := StyleBoxFlat.new()
+    input_normal.bg_color = Color(0.012, 0.035, 0.031, 1.0)
+    input_normal.border_color = Color(0.32, 0.39, 0.31, 0.82)
+    input_normal.set_border_width_all(1)
+    input_normal.set_corner_radius_all(8)
+    input_normal.content_margin_left = 10.0
+    input_normal.content_margin_right = 10.0
+    input_normal.content_margin_top = 7.0
+    input_normal.content_margin_bottom = 7.0
+    var input_focus := input_normal.duplicate() as StyleBoxFlat
+    input_focus.border_color = Color(0.78, 0.63, 0.32, 1.0)
+    theme.set_stylebox("normal", "LineEdit", input_normal)
+    theme.set_stylebox("focus", "LineEdit", input_focus)
+
+    var progress_background := StyleBoxFlat.new()
+    progress_background.bg_color = Color(0.025, 0.065, 0.055, 1.0)
+    progress_background.set_corner_radius_all(5)
+    var progress_fill := StyleBoxFlat.new()
+    progress_fill.bg_color = Color(0.49, 0.62, 0.33, 1.0)
+    progress_fill.set_corner_radius_all(5)
+    theme.set_stylebox("background", "ProgressBar", progress_background)
+    theme.set_stylebox("fill", "ProgressBar", progress_fill)
+
+    theme.set_color("font_color", "Label", Color(0.88, 0.92, 0.84))
+    theme.set_color("font_color", "Button", Color(0.92, 0.93, 0.84))
+    theme.set_color("font_hover_color", "Button", Color(1.0, 0.94, 0.73))
+    theme.set_color("font_pressed_color", "Button", Color(1.0, 0.96, 0.81))
+    theme.set_color("font_disabled_color", "Button", Color(0.49, 0.55, 0.49))
+    theme.set_color("font_color", "LineEdit", Color(0.93, 0.95, 0.88))
+    theme.set_color("font_placeholder_color", "LineEdit", Color(0.47, 0.55, 0.49))
+    theme.set_color("caret_color", "LineEdit", Color(0.86, 0.72, 0.42))
+    theme.set_color("font_color", "OptionButton", Color(0.92, 0.93, 0.84))
+    theme.set_font_size("font_size", "Label", 13)
+    theme.set_font_size("font_size", "Button", 14)
+    theme.set_font_size("font_size", "OptionButton", 13)
+    theme.set_font_size("font_size", "LineEdit", 13)
+    return theme
 
 func _ready() -> void:
+    multiplayer.peer_connected.connect(_on_peer_connected)
+    multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+    multiplayer.connected_to_server.connect(_on_connected_to_server)
+    multiplayer.connection_failed.connect(_on_connection_failed)
+    multiplayer.server_disconnected.connect(_on_server_disconnected)
     _create_environment()
+    print("WORLDS_STAGE environment")
     _create_terrain()
+    print("WORLDS_STAGE terrain")
     _create_river()
+    _create_riverbank_details()
+    print("WORLDS_STAGE riverbank_details")
+    print("WORLDS_STAGE river")
     _create_forest()
+    print("WORLDS_STAGE forest")
+    _create_pine_forest()
+    print("WORLDS_STAGE pine_forest")
+    _create_environment_details()
+    print("WORLDS_STAGE environment_details")
     _create_foraging_bushes()
+    print("WORLDS_STAGE forage")
+    _create_resource_nodes()
+    print("WORLDS_STAGE resources")
+    _create_wildlife()
+    print("WORLDS_STAGE wildlife")
+    _create_village()
+    print("WORLDS_STAGE village")
+    _create_riverfront_landmarks()
+    print("WORLDS_STAGE riverfront_landmarks")
+    _create_valley_lookout()
+    print("WORLDS_STAGE valley_lookout")
     _create_campsite()
+    print("WORLDS_STAGE campsite")
     _create_memory_stone()
+    print("WORLDS_STAGE memory")
     _create_player()
+    print("WORLDS_STAGE player")
     _create_hud()
+    print("WORLDS_STAGE hud")
+    var startup_args := OS.get_cmdline_user_args()
+    if startup_args.has("--gameplay-smoke") or startup_args.has("--lan-smoke-host") or startup_args.has("--lan-smoke-client"):
+        if FileAccess.file_exists(SAVE_PATH):
+            var remove_error := DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+            if remove_error != OK:
+                push_warning("Could not clear isolated smoke-test save: %d" % remove_error)
+    _load_game()
+    network_player_names[1] = player_name
+    _on_camera_distance_changed(camera_distance)
+    _on_camera_fov_changed(camera_fov)
+    _on_button_opacity_changed(button_opacity)
+    _on_control_scale_changed(control_scale)
+    _sync_settings_sliders()
+    _apply_quality_preset(quality_index)
+    Engine.max_fps = current_fps_target
+    var command_args := OS.get_cmdline_user_args()
+    if command_args.has("--gameplay-smoke"):
+        call_deferred("_start_gameplay_smoke_test")
+    elif command_args.has("--lan-smoke-host"):
+        call_deferred("_start_lan_smoke_host")
+    elif command_args.has("--lan-smoke-client"):
+        call_deferred("_start_lan_smoke_client")
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
         pressed_actions.clear()
+        _save_game()
+    elif what == NOTIFICATION_WM_CLOSE_REQUEST:
+        _save_game()
 
 func _create_environment() -> void:
     var world_env := WorldEnvironment.new()
@@ -63,11 +320,17 @@ func _create_environment() -> void:
     world_environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
     world_environment.ambient_light_color = Color(0.72, 0.82, 0.92)
     world_environment.ambient_light_energy = 0.65
+    world_environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+    world_environment.adjustment_enabled = true
+    world_environment.adjustment_brightness = 1.0
+    world_environment.adjustment_contrast = 1.045
+    world_environment.adjustment_saturation = 1.07
     world_environment.fog_enabled = true
     world_environment.fog_light_color = Color(0.61, 0.72, 0.70)
     world_environment.fog_density = 0.0025
     world_env.environment = world_environment
     add_child(world_env)
+    _create_cloud_layer()
 
     sun_light = DirectionalLight3D.new()
     sun_light.rotation_degrees = Vector3(-48, -32, 0)
@@ -75,70 +338,217 @@ func _create_environment() -> void:
     sun_light.shadow_enabled = true
     add_child(sun_light)
 
+func _create_cloud_layer() -> void:
+    cloud_layer = MultiMeshInstance3D.new()
+    cloud_layer.name = "Soft_Valley_Clouds"
+    var cloud_mesh := SphereMesh.new()
+    cloud_mesh.radius = 5.0
+    cloud_mesh.height = 2.6
+    cloud_mesh.radial_segments = 8
+    cloud_mesh.rings = 4
+    var cloud_material := StandardMaterial3D.new()
+    cloud_material.albedo_color = Color(0.82, 0.89, 0.94, 0.42)
+    cloud_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    cloud_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    cloud_material.roughness = 1.0
+    cloud_mesh.material = cloud_material
+    var cloud_multimesh := MultiMesh.new()
+    cloud_multimesh.transform_format = MultiMesh.TRANSFORM_3D
+    cloud_multimesh.mesh = cloud_mesh
+    var cloud_rng := RandomNumberGenerator.new()
+    cloud_rng.seed = 20261106
+    var cloud_count := 35
+    cloud_multimesh.instance_count = cloud_count
+    for cloud_index in range(cloud_count):
+        var group_index := int(cloud_index / 5)
+        var puff_index := cloud_index % 5
+        var group_x := -190.0 + float(group_index % 4) * 125.0
+        var group_z := -170.0 + float(group_index / 4) * 210.0
+        var cloud_position := Vector3(
+            group_x + cloud_rng.randf_range(-12.0, 12.0) + float(puff_index) * 2.0,
+            72.0 + cloud_rng.randf_range(-2.0, 2.0),
+            group_z + cloud_rng.randf_range(-10.0, 10.0)
+        )
+        var cloud_scale := Vector3(
+            cloud_rng.randf_range(1.2, 2.1),
+            cloud_rng.randf_range(0.48, 0.72),
+            cloud_rng.randf_range(0.9, 1.7)
+        )
+        var cloud_transform := Transform3D(Basis.IDENTITY.scaled(cloud_scale), cloud_position)
+        cloud_multimesh.set_instance_transform(cloud_index, cloud_transform)
+    cloud_layer.multimesh = cloud_multimesh
+    cloud_layer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    cloud_layer.extra_cull_margin = 180.0
+    add_child(cloud_layer)
+
+func _terrain_hash(grid_x: int, grid_z: int) -> float:
+    var value := sin(float(grid_x) * 127.1 + float(grid_z) * 311.7) * 43758.5453
+    return value - floorf(value)
+
+func _terrain_noise(x: float, z: float) -> float:
+    var grid_x := floori(x)
+    var grid_z := floori(z)
+    var blend_x := x - floorf(x)
+    var blend_z := z - floorf(z)
+    blend_x = blend_x * blend_x * (3.0 - 2.0 * blend_x)
+    blend_z = blend_z * blend_z * (3.0 - 2.0 * blend_z)
+    var top := lerpf(_terrain_hash(grid_x, grid_z), _terrain_hash(grid_x + 1, grid_z), blend_x)
+    var bottom := lerpf(_terrain_hash(grid_x, grid_z + 1), _terrain_hash(grid_x + 1, grid_z + 1), blend_x)
+    return lerpf(top, bottom, blend_z)
+
 func _height_at(x: float, z: float) -> float:
-    var hills := sin(x * 0.055) * 1.7 + cos(z * 0.047) * 1.5
-    hills += sin((x + z) * 0.025) * 2.2
-    var river_bank: float = absf(x - sin(z * 0.035) * 8.0)
-    var valley: float = -maxf(0.0, 1.0 - river_bank / 13.0) * 1.1
-    return hills + valley
+    var broad_noise := _terrain_noise(x * 0.0062, z * 0.0062)
+    var medium_noise := _terrain_noise(x * 0.021, z * 0.021)
+    var fine_noise := _terrain_noise(x * 0.065, z * 0.065)
+    var landform_variation := (broad_noise - 0.5) * 8.0
+    landform_variation += (medium_noise - 0.5) * 3.8
+    landform_variation += (fine_noise - 0.5) * 0.9
+
+    var broad_hills := sin(x * 0.013) * 6.5 + cos(z * 0.011) * 7.0
+    broad_hills += sin((x + z) * 0.008) * 5.0 + landform_variation
+
+    var desert_weight := clampf((x - 125.0) / 105.0, 0.0, 1.0)
+    var dunes := sin(x * 0.031 + cos(z * 0.022) * 1.8) * 1.25 + cos(z * 0.038) * 0.75
+    dunes += (broad_noise - 0.5) * 1.8 + (fine_noise - 0.5) * 0.55
+    broad_hills = lerpf(broad_hills, dunes, desert_weight)
+
+    var snow_weight := clampf((-z - 125.0) / 100.0, 0.0, 1.0)
+    var alpine := sin(x * 0.018) * 8.0 + cos(z * 0.021) * 6.0
+    var broken_ridge := 1.0 - absf(_terrain_noise(x * 0.014 + 37.0, z * 0.014 - 19.0) * 2.0 - 1.0)
+    alpine += pow(broken_ridge, 2.2) * 15.0
+    alpine += landform_variation * 1.35
+    broad_hills = lerpf(broad_hills, alpine, snow_weight)
+
+    var ridge_wave := maxf(0.0, sin((x - z) * 0.021 + cos(z * 0.009)))
+    var ridges := ridge_wave * ridge_wave * lerpf(8.5, 3.0, desert_weight)
+    var river_bank: float = absf(x - sin(z * 0.018) * 18.0)
+    var valley: float = -maxf(0.0, 1.0 - river_bank / 35.0) * 4.2
+    var upland := maxf(0.0, sin(x * 0.004 + z * 0.006)) * 4.0
+    return broad_hills + ridges + upland + valley
 
 func _create_terrain() -> void:
-    var vertices := PackedVector3Array()
-    var colors := PackedColorArray()
-    var indices := PackedInt32Array()
+    # Keep the current prototype world at 512 m, but split its surface into
+    # 256 m terrain tiles. This creates useful culling/collision boundaries
+    # and establishes the same tile size planned for the larger world.
+    var chunks_per_axis := 2
+    var steps_per_chunk: int = int(GRID_STEPS / float(chunks_per_axis))
+    var terrain_shader := Shader.new()
+    terrain_shader.code = """
+shader_type spatial;
+render_mode diffuse_burley, specular_schlick_ggx;
+varying vec3 terrain_world_position;
+varying vec4 biome_vertex_color;
+
+float hash_grid(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+float value_noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 uv = fract(p);
+    uv = uv * uv * (3.0 - 2.0 * uv);
+    float a = hash_grid(cell);
+    float b = hash_grid(cell + vec2(1.0, 0.0));
+    float c = hash_grid(cell + vec2(0.0, 1.0));
+    float d = hash_grid(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, uv.x), mix(c, d, uv.x), uv.y);
+}
+void vertex() {
+    terrain_world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    biome_vertex_color = COLOR;
+}
+void fragment() {
+    float broad = value_noise(terrain_world_position.xz * 0.035);
+    float medium = value_noise(terrain_world_position.xz * 0.24);
+    float fine = value_noise(terrain_world_position.xz * 1.4);
+    float grain = value_noise(terrain_world_position.xz * 4.0);
+    vec3 albedo = biome_vertex_color.rgb;
+    albedo *= mix(0.80, 1.13, broad);
+    albedo *= mix(0.92, 1.08, medium);
+    albedo *= mix(0.96, 1.04, fine);
+    float mineral_grain = smoothstep(0.72, 0.94, grain) * 0.10;
+    albedo = mix(albedo, albedo * vec3(0.74, 0.78, 0.76), mineral_grain);
+    ALBEDO = albedo;
+    ROUGHNESS = 0.96;
+    METALLIC = 0.0;
+}
+"""
+    var terrain_material := ShaderMaterial.new()
+    terrain_material.shader = terrain_shader
     var step := WORLD_SIZE / float(GRID_STEPS)
 
-    for z_index in range(GRID_STEPS + 1):
-        for x_index in range(GRID_STEPS + 1):
-            var x := -WORLD_SIZE * 0.5 + float(x_index) * step
-            var z := -WORLD_SIZE * 0.5 + float(z_index) * step
-            var y := _height_at(x, z)
-            vertices.append(Vector3(x, y, z))
+    for chunk_z in range(chunks_per_axis):
+        for chunk_x in range(chunks_per_axis):
+            var vertices := PackedVector3Array()
+            var normals := PackedVector3Array()
+            var colors := PackedColorArray()
+            var indices := PackedInt32Array()
 
-            var tint := Color(0.22, 0.42, 0.20)
-            var variation: float = clampf((y + 4.0) / 12.0, 0.0, 1.0)
-            tint = tint.lerp(Color(0.38, 0.48, 0.29), variation * 0.55)
-            colors.append(tint)
+            for local_z in range(steps_per_chunk + 1):
+                for local_x in range(steps_per_chunk + 1):
+                    var global_x_index := chunk_x * steps_per_chunk + local_x
+                    var global_z_index := chunk_z * steps_per_chunk + local_z
+                    var x := -WORLD_SIZE * 0.5 + float(global_x_index) * step
+                    var z := -WORLD_SIZE * 0.5 + float(global_z_index) * step
+                    var y := _height_at(x, z)
+                    vertices.append(Vector3(x, y, z))
+                    var normal_sample := 0.55
+                    var terrain_normal := Vector3(
+                        _height_at(x - normal_sample, z) - _height_at(x + normal_sample, z),
+                        normal_sample * 2.0,
+                        _height_at(x, z - normal_sample) - _height_at(x, z + normal_sample)
+                    ).normalized()
+                    normals.append(terrain_normal)
 
-    for z_index in range(GRID_STEPS):
-        for x_index in range(GRID_STEPS):
-            var a := z_index * (GRID_STEPS + 1) + x_index
-            var b := a + 1
-            var c := a + GRID_STEPS + 1
-            var d := c + 1
-            indices.append(a)
-            indices.append(c)
-            indices.append(b)
-            indices.append(b)
-            indices.append(c)
-            indices.append(d)
+                    var tint := Color(0.20, 0.39, 0.18)
+                    var variation: float = clampf((y + 3.0) / 24.0, 0.0, 1.0)
+                    var ground_breakup := sin(x * 0.19) * cos(z * 0.16) * 0.045
+                    tint = tint.lerp(Color(0.43, 0.49, 0.30), clampf(variation * 0.62 + ground_breakup, 0.0, 0.72))
+                    var desert_weight := clampf((x - 125.0) / 105.0, 0.0, 1.0)
+                    var snow_weight := clampf((-z - 125.0) / 100.0, 0.0, 1.0)
+                    tint = tint.lerp(Color(0.66, 0.53, 0.31), desert_weight)
+                    tint = tint.lerp(Color(0.76, 0.82, 0.83), snow_weight)
+                    var exposed_rock := clampf((y - 20.0) / 12.0, 0.0, 0.68)
+                    tint = tint.lerp(Color(0.42, 0.44, 0.43), exposed_rock)
+                    colors.append(tint)
 
-    var arrays := []
-    arrays.resize(Mesh.ARRAY_MAX)
-    arrays[Mesh.ARRAY_VERTEX] = vertices
-    arrays[Mesh.ARRAY_COLOR] = colors
-    arrays[Mesh.ARRAY_INDEX] = indices
+            for local_z in range(steps_per_chunk):
+                for local_x in range(steps_per_chunk):
+                    var a := local_z * (steps_per_chunk + 1) + local_x
+                    var b := a + 1
+                    var c := a + steps_per_chunk + 1
+                    var d := c + 1
+                    indices.append(a)
+                    indices.append(c)
+                    indices.append(b)
+                    indices.append(b)
+                    indices.append(c)
+                    indices.append(d)
 
-    var mesh := ArrayMesh.new()
-    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-    var material := StandardMaterial3D.new()
-    material.vertex_color_use_as_albedo = true
-    material.roughness = 1.0
-    mesh.surface_set_material(0, material)
+            var arrays := []
+            arrays.resize(Mesh.ARRAY_MAX)
+            arrays[Mesh.ARRAY_VERTEX] = vertices
+            arrays[Mesh.ARRAY_NORMAL] = normals
+            arrays[Mesh.ARRAY_COLOR] = colors
+            arrays[Mesh.ARRAY_INDEX] = indices
 
-    var terrain := MeshInstance3D.new()
-    terrain.name = "Terrain"
-    terrain.mesh = mesh
-    add_child(terrain)
+            var mesh := ArrayMesh.new()
+            mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+            mesh.surface_set_material(0, terrain_material)
 
-    var body := StaticBody3D.new()
-    body.name = "TerrainCollision"
-    var collision := CollisionShape3D.new()
-    var shape := ConcavePolygonShape3D.new()
-    shape.set_faces(_vertices_to_faces(vertices, indices))
-    collision.shape = shape
-    body.add_child(collision)
-    add_child(body)
+            var terrain_chunk := MeshInstance3D.new()
+            terrain_chunk.name = "TerrainChunk_%d_%d" % [chunk_x, chunk_z]
+            terrain_chunk.mesh = mesh
+            add_child(terrain_chunk)
+
+            var body := StaticBody3D.new()
+            body.name = "TerrainCollision_%d_%d" % [chunk_x, chunk_z]
+            var collision := CollisionShape3D.new()
+            var shape := ConcavePolygonShape3D.new()
+            shape.set_faces(_vertices_to_faces(vertices, indices))
+            collision.shape = shape
+            body.add_child(collision)
+            add_child(body)
+
 
 func _vertices_to_faces(vertices: PackedVector3Array, indices: PackedInt32Array) -> PackedVector3Array:
     var faces := PackedVector3Array()
@@ -154,7 +564,7 @@ func _create_river() -> void:
 
     for i in range(segments + 1):
         var z := -WORLD_SIZE * 0.5 + float(i) * WORLD_SIZE / float(segments)
-        var center_x := sin(z * 0.035) * 8.0
+        var center_x := sin(z * 0.018) * 18.0
         var water_y := _height_at(center_x, z) - 0.12
         vertices.append(Vector3(center_x - 4.2, water_y, z))
         vertices.append(Vector3(center_x + 4.2, water_y, z))
@@ -177,24 +587,124 @@ func _create_river() -> void:
     var water := MeshInstance3D.new()
     water.name = "River"
     water.mesh = river_mesh
-    var water_material := StandardMaterial3D.new()
-    water_material.albedo_color = Color(0.10, 0.42, 0.62, 0.88)
-    water_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-    water_material.roughness = 0.18
-    water_material.metallic = 0.12
-    water_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    var water_shader := Shader.new()
+    water_shader.code = """
+shader_type spatial;
+render_mode blend_mix, depth_draw_opaque, cull_disabled;
+
+uniform vec4 water_tint : source_color = vec4(0.05, 0.34, 0.52, 0.88);
+varying vec3 river_world_position;
+
+void vertex() {
+    vec3 world_vertex = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    river_world_position = world_vertex;
+    float long_wave = sin(world_vertex.x * 0.14 + TIME * 0.9) * 0.045;
+    float cross_wave = cos(world_vertex.z * 0.18 - TIME * 0.65) * 0.035;
+    VERTEX.y += long_wave + cross_wave;
+}
+
+void fragment() {
+    float ripple_a = sin(river_world_position.x * 0.23 + TIME * 1.05);
+    float ripple_b = cos(river_world_position.z * 0.17 - TIME * 0.8);
+    float ripple = (ripple_a * ripple_b + 1.0) * 0.5;
+    ALBEDO = water_tint.rgb * (0.84 + ripple * 0.22);
+    METALLIC = 0.08;
+    ROUGHNESS = 0.16;
+    SPECULAR = 0.78;
+    ALPHA = water_tint.a;
+}
+"""
+    var water_material := ShaderMaterial.new()
+    water_material.shader = water_shader
     water.mesh.surface_set_material(0, water_material)
     add_child(water)
+
+func _create_riverbank_details() -> void:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = 20261112
+
+    var pebble_mesh := SphereMesh.new()
+    pebble_mesh.radius = 0.34
+    pebble_mesh.height = 0.42
+    pebble_mesh.radial_segments = 7
+    pebble_mesh.rings = 4
+    var pebble_multi := MultiMesh.new()
+    pebble_multi.transform_format = MultiMesh.TRANSFORM_3D
+    pebble_multi.use_colors = true
+    pebble_multi.mesh = pebble_mesh
+    pebble_multi.instance_count = 260
+
+    var pebble_material := StandardMaterial3D.new()
+    pebble_material.vertex_color_use_as_albedo = true
+    pebble_material.roughness = 0.98
+
+    for i in range(pebble_multi.instance_count):
+        var z := rng.randf_range(-WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
+        var center_x := sin(z * 0.018) * 18.0
+        var side := -1.0 if rng.randf() < 0.5 else 1.0
+        var x := center_x + side * rng.randf_range(5.2, 10.5)
+        var scale := rng.randf_range(0.45, 1.35)
+        var pebble_position := Vector3(x, _height_at(x, z) + scale * 0.12, z)
+        var pebble_basis := Basis.from_euler(Vector3(
+            rng.randf_range(-0.2, 0.2),
+            rng.randf_range(0.0, TAU),
+            rng.randf_range(-0.2, 0.2)
+        )).scaled(Vector3(scale * 1.35, scale * 0.72, scale))
+        pebble_multi.set_instance_transform(i, Transform3D(pebble_basis, pebble_position))
+        pebble_multi.set_instance_color(i, Color(0.30, 0.34, 0.33).lerp(Color(0.62, 0.58, 0.48), rng.randf() * 0.72))
+
+    var pebbles := MultiMeshInstance3D.new()
+    pebbles.name = "RiverbankPebbles"
+    pebbles.multimesh = pebble_multi
+    pebbles.material_override = pebble_material
+    add_child(pebbles)
+
+    var reed_mesh := CylinderMesh.new()
+    reed_mesh.top_radius = 0.012
+    reed_mesh.bottom_radius = 0.045
+    reed_mesh.height = 0.82
+    reed_mesh.radial_segments = 4
+    var reed_multi := MultiMesh.new()
+    reed_multi.transform_format = MultiMesh.TRANSFORM_3D
+    reed_multi.use_colors = true
+    reed_multi.mesh = reed_mesh
+    reed_multi.instance_count = 180
+
+    var reed_material := StandardMaterial3D.new()
+    reed_material.vertex_color_use_as_albedo = true
+    reed_material.roughness = 1.0
+
+    for i in range(reed_multi.instance_count):
+        var z := rng.randf_range(-WORLD_SIZE * 0.45, WORLD_SIZE * 0.45)
+        var center_x := sin(z * 0.018) * 18.0
+        var side := -1.0 if rng.randf() < 0.5 else 1.0
+        var x := center_x + side * rng.randf_range(6.0, 10.0)
+        var height_scale := rng.randf_range(0.65, 1.35)
+        var lean := rng.randf_range(-0.16, 0.16)
+        var reed_position := Vector3(x, _height_at(x, z) + 0.35 * height_scale, z)
+        var reed_basis := Basis.from_euler(Vector3(lean, rng.randf_range(0.0, TAU), lean * 0.6)).scaled(
+            Vector3(1.0, height_scale, 1.0)
+        )
+        reed_multi.set_instance_transform(i, Transform3D(reed_basis, reed_position))
+        reed_multi.set_instance_color(i, Color(0.24, 0.34, 0.14).lerp(Color(0.55, 0.52, 0.25), rng.randf() * 0.65))
+
+    var reeds := MultiMeshInstance3D.new()
+    reeds.name = "RiverbankReeds"
+    reeds.multimesh = reed_multi
+    reeds.material_override = reed_material
+    add_child(reeds)
 
 func _create_forest() -> void:
     var rng := RandomNumberGenerator.new()
     rng.seed = 20261106
 
     var tree_positions: Array[Dictionary] = []
-    for i in range(95):
+    for i in range(750):
         var x := rng.randf_range(-WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
         var z := rng.randf_range(-WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
-        if abs(x - sin(z * 0.035) * 8.0) < 7.0:
+        if abs(x - sin(z * 0.018) * 18.0) < 13.0:
+            continue
+        if x > 145.0 or z < -145.0:
             continue
         if Vector2(x, z).length() < 12.0:
             continue
@@ -204,6 +714,81 @@ func _create_forest() -> void:
         })
 
     _create_tree_instances(tree_positions)
+
+func _create_pine_forest() -> void:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = 20261109
+    var pine_positions: Array[Dictionary] = []
+    for i in range(190):
+        var x := rng.randf_range(-WORLD_SIZE * 0.43, WORLD_SIZE * 0.43)
+        var z := rng.randf_range(-WORLD_SIZE * 0.44, -WORLD_SIZE * 0.29)
+        if absf(x - sin(z * 0.018) * 18.0) < 14.0:
+            continue
+        pine_positions.append({
+            "position": Vector3(x, _height_at(x, z), z),
+            "scale": rng.randf_range(0.85, 1.35)
+        })
+
+    if pine_positions.is_empty():
+        return
+
+    var trunk_mesh := CylinderMesh.new()
+    trunk_mesh.top_radius = 0.10
+    trunk_mesh.bottom_radius = 0.19
+    trunk_mesh.height = 1.8
+    var canopy_mesh := CylinderMesh.new()
+    canopy_mesh.top_radius = 0.035
+    canopy_mesh.bottom_radius = 1.0
+    canopy_mesh.height = 3.7
+    canopy_mesh.radial_segments = 7
+
+    var trunk_multi := MultiMesh.new()
+    trunk_multi.transform_format = MultiMesh.TRANSFORM_3D
+    trunk_multi.use_colors = true
+    trunk_multi.mesh = trunk_mesh
+    trunk_multi.instance_count = pine_positions.size()
+    var canopy_multi := MultiMesh.new()
+    canopy_multi.transform_format = MultiMesh.TRANSFORM_3D
+    canopy_multi.use_colors = true
+    canopy_multi.mesh = canopy_mesh
+    canopy_multi.instance_count = pine_positions.size()
+
+    var trunk_material := StandardMaterial3D.new()
+    trunk_material.vertex_color_use_as_albedo = true
+    trunk_material.albedo_color = Color(0.28, 0.19, 0.12)
+    trunk_material.roughness = 1.0
+    var canopy_material := StandardMaterial3D.new()
+    canopy_material.vertex_color_use_as_albedo = true
+    canopy_material.albedo_color = Color(0.065, 0.20, 0.16)
+    canopy_material.roughness = 0.95
+
+    for i in range(pine_positions.size()):
+        var data: Dictionary = pine_positions[i]
+        var pos: Vector3 = data["position"]
+        var scale: float = data["scale"]
+        trunk_multi.set_instance_transform(i, Transform3D(
+            Basis.from_scale(Vector3(scale, scale, scale)),
+            pos + Vector3(0, 0.9 * scale, 0)
+        ))
+        trunk_multi.set_instance_color(i, Color(0.22, 0.14, 0.09))
+        canopy_multi.set_instance_transform(i, Transform3D(
+            Basis.from_scale(Vector3(scale, scale * 1.1, scale)),
+            pos + Vector3(0, 2.55 * scale, 0)
+        ))
+        canopy_multi.set_instance_color(i, Color(0.035, 0.15, 0.12).lerp(Color(0.11, 0.29, 0.23), rng.randf() * 0.8))
+
+    pine_trunks = MultiMeshInstance3D.new()
+    pine_trunks.name = "SnowPineTrunks"
+    pine_trunks.multimesh = trunk_multi
+    pine_trunks.material_override = trunk_material
+    add_child(pine_trunks)
+
+    pine_canopies = MultiMeshInstance3D.new()
+    pine_canopies.name = "SnowPineCanopies"
+    pine_canopies.multimesh = canopy_multi
+    pine_canopies.material_override = canopy_material
+    add_child(pine_canopies)
+    total_pine_instances = pine_positions.size()
 
 func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
     if tree_positions.is_empty():
@@ -216,26 +801,34 @@ func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
 
     var bark := StandardMaterial3D.new()
     bark.albedo_color = Color(0.27, 0.16, 0.09)
+    bark.vertex_color_use_as_albedo = true
     bark.roughness = 1.0
 
     var trunk_multi := MultiMesh.new()
     trunk_multi.transform_format = MultiMesh.TRANSFORM_3D
+    trunk_multi.use_colors = true
     trunk_multi.mesh = trunk_mesh
     trunk_multi.instance_count = tree_positions.size()
 
     var crown_mesh := SphereMesh.new()
     crown_mesh.radius = 1.05
     crown_mesh.height = 2.0
+    crown_mesh.radial_segments = 12
+    crown_mesh.rings = 8
 
     var leaves := StandardMaterial3D.new()
     leaves.albedo_color = Color(0.12, 0.31, 0.15)
+    leaves.vertex_color_use_as_albedo = true
     leaves.roughness = 0.92
 
     var crown_multi := MultiMesh.new()
     crown_multi.transform_format = MultiMesh.TRANSFORM_3D
+    crown_multi.use_colors = true
     crown_multi.mesh = crown_mesh
-    crown_multi.instance_count = tree_positions.size()
+    crown_multi.instance_count = tree_positions.size() * 3
 
+    var tree_rng := RandomNumberGenerator.new()
+    tree_rng.seed = 20261107
     for i in range(tree_positions.size()):
         var tree_data: Dictionary = tree_positions[i]
         var tree_position: Vector3 = tree_data["position"]
@@ -244,22 +837,126 @@ func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
         var trunk_basis := Basis.from_scale(Vector3(tree_scale, tree_scale, tree_scale))
         var trunk_transform := Transform3D(trunk_basis, tree_position + Vector3(0, 1.05 * tree_scale, 0))
         trunk_multi.set_instance_transform(i, trunk_transform)
+        trunk_multi.set_instance_color(i, Color(0.23, 0.13, 0.075).lerp(Color(0.38, 0.24, 0.13), tree_rng.randf() * 0.55))
 
-        var crown_basis := Basis.from_scale(Vector3(tree_scale, tree_scale, tree_scale))
-        var crown_transform := Transform3D(crown_basis, tree_position + Vector3(0, 2.45 * tree_scale, 0))
-        crown_multi.set_instance_transform(i, crown_transform)
+        for lobe in range(3):
+            var lobe_offset := Vector3.ZERO
+            var lobe_factor := Vector3.ONE
+            if lobe == 0:
+                lobe_offset = Vector3(0.0, 2.47, 0.0)
+                lobe_factor = Vector3(1.0, 1.08, 1.0)
+            elif lobe == 1:
+                lobe_offset = Vector3(-0.56, 2.20, 0.10)
+                lobe_factor = Vector3(0.78, 0.82, 0.86)
+            else:
+                lobe_offset = Vector3(0.54, 2.28, 0.06)
+                lobe_factor = Vector3(0.82, 0.88, 0.80)
+            var crown_scale := Vector3(
+                tree_scale * tree_rng.randf_range(0.92, 1.14) * lobe_factor.x,
+                tree_scale * tree_rng.randf_range(0.88, 1.16) * lobe_factor.y,
+                tree_scale * tree_rng.randf_range(0.92, 1.18) * lobe_factor.z
+            )
+            var crown_basis := Basis.from_euler(Vector3(0.0, tree_rng.randf_range(0.0, TAU), 0.0)).scaled(crown_scale)
+            var crown_transform := Transform3D(crown_basis, tree_position + lobe_offset * tree_scale)
+            var crown_index := i * 3 + lobe
+            crown_multi.set_instance_transform(crown_index, crown_transform)
+            crown_multi.set_instance_color(crown_index, Color(0.075, 0.24, 0.105).lerp(Color(0.24, 0.42, 0.16), tree_rng.randf() * 0.8))
 
-    var trunks := MultiMeshInstance3D.new()
-    trunks.name = "TreeTrunks"
-    trunks.multimesh = trunk_multi
-    trunks.material_override = bark
-    add_child(trunks)
+    tree_trunks = MultiMeshInstance3D.new()
+    tree_trunks.name = "TreeTrunks"
+    tree_trunks.multimesh = trunk_multi
+    tree_trunks.material_override = bark
+    add_child(tree_trunks)
 
-    var crowns := MultiMeshInstance3D.new()
-    crowns.name = "TreeCanopies"
-    crowns.multimesh = crown_multi
-    crowns.material_override = leaves
-    add_child(crowns)
+    tree_canopies = MultiMeshInstance3D.new()
+    tree_canopies.name = "TreeCanopies"
+    tree_canopies.multimesh = crown_multi
+    tree_canopies.material_override = leaves
+    add_child(tree_canopies)
+    total_tree_instances = tree_positions.size()
+
+func _create_environment_details() -> void:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = 20261108
+
+    var grass_mesh := CylinderMesh.new()
+    grass_mesh.top_radius = 0.018
+    grass_mesh.bottom_radius = 0.075
+    grass_mesh.height = 0.48
+    grass_mesh.radial_segments = 4
+    var grass_multi := MultiMesh.new()
+    grass_multi.transform_format = MultiMesh.TRANSFORM_3D
+    grass_multi.use_colors = true
+    grass_multi.mesh = grass_mesh
+    grass_multi.instance_count = 4200
+
+    var grass_material := StandardMaterial3D.new()
+    grass_material.vertex_color_use_as_albedo = true
+    grass_material.albedo_color = Color(0.20, 0.38, 0.14)
+    grass_material.roughness = 1.0
+
+    for i in range(grass_multi.instance_count):
+        var x := rng.randf_range(-WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+        var z := rng.randf_range(-WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+        var desert_zone := x > 145.0
+        var snow_zone := z < -145.0
+        if absf(x - sin(z * 0.018) * 18.0) < 9.0 or Vector2(x, z).length() < 20.0 or (desert_zone and rng.randf() < 0.94) or (snow_zone and rng.randf() < 0.70):
+            grass_multi.set_instance_transform(i, Transform3D(Basis.IDENTITY, Vector3(0, -1000, 0)))
+            continue
+        var height_scale := rng.randf_range(0.65, 1.35)
+        var blade_scale := rng.randf_range(0.75, 1.35)
+        var basis := Basis.from_euler(Vector3(0.0, rng.randf_range(0.0, TAU), 0.0)).scaled(
+            Vector3(blade_scale, blade_scale * height_scale, blade_scale)
+        )
+        var pos := Vector3(x, _height_at(x, z) + 0.18 * height_scale, z)
+        grass_multi.set_instance_transform(i, Transform3D(basis, pos))
+        grass_multi.set_instance_color(i, Color(0.12, 0.30, 0.10).lerp(Color(0.34, 0.47, 0.18), rng.randf() * 0.75))
+
+    grass_field = MultiMeshInstance3D.new()
+    grass_field.name = "MeadowGrass"
+    grass_field.multimesh = grass_multi
+    grass_field.material_override = grass_material
+    add_child(grass_field)
+    total_grass_instances = grass_multi.instance_count
+
+    var rock_mesh := SphereMesh.new()
+    rock_mesh.radius = 0.72
+    rock_mesh.height = 1.0
+    rock_mesh.radial_segments = 12
+    rock_mesh.rings = 8
+    var rock_multi := MultiMesh.new()
+    rock_multi.transform_format = MultiMesh.TRANSFORM_3D
+    rock_multi.use_colors = true
+    rock_multi.mesh = rock_mesh
+    rock_multi.instance_count = 260
+
+    var rock_material := StandardMaterial3D.new()
+    rock_material.vertex_color_use_as_albedo = true
+    rock_material.albedo_color = Color(0.40, 0.42, 0.39)
+    rock_material.roughness = 0.96
+
+    for i in range(rock_multi.instance_count):
+        var x := rng.randf_range(-WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
+        var z := rng.randf_range(-WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
+        var river_distance := absf(x - sin(z * 0.018) * 18.0)
+        var scale := rng.randf_range(0.55, 1.65)
+        var rock_basis := Basis.from_euler(Vector3(
+            rng.randf_range(-0.18, 0.18),
+            rng.randf_range(0.0, TAU),
+            rng.randf_range(-0.18, 0.18)
+        )).scaled(Vector3(scale * 1.25, scale * 0.72, scale))
+        var rock_position := Vector3(x, _height_at(x, z) + scale * 0.22, z)
+        if river_distance < 8.0:
+            rock_position.y -= 1000.0
+        rock_multi.set_instance_transform(i, Transform3D(rock_basis, rock_position))
+        rock_multi.set_instance_color(i, Color(0.31, 0.34, 0.33).lerp(Color(0.58, 0.56, 0.49), rng.randf() * 0.7))
+
+    rock_field = MultiMeshInstance3D.new()
+    rock_field.name = "FieldRocks"
+    rock_field.multimesh = rock_multi
+    rock_field.material_override = rock_material
+    add_child(rock_field)
+    total_rock_instances = rock_multi.instance_count
 
 func _create_player() -> void:
     player = CharacterBody3D.new()
@@ -279,9 +976,49 @@ func _create_player() -> void:
     visual.name = "CharacterVisual"
     player.add_child(visual)
 
-    var torso := _make_capsule_part(0.34, 1.12, Color(0.16, 0.30, 0.23))
-    torso.position = Vector3(0, 1.16, 0)
-    visual.add_child(torso)
+    player_torso = MeshInstance3D.new()
+    player_torso.name = "PlayerTorso"
+    var torso_mesh := CylinderMesh.new()
+    torso_mesh.top_radius = 0.27
+    torso_mesh.bottom_radius = 0.39
+    torso_mesh.height = 0.98
+    torso_mesh.radial_segments = 16
+    player_torso.mesh = torso_mesh
+    player_torso.position = Vector3(0.0, 1.24, 0.0)
+    var torso_material := StandardMaterial3D.new()
+    torso_material.albedo_color = Color(0.16, 0.30, 0.23)
+    torso_material.roughness = 0.88
+    player_torso.material_override = torso_material
+    visual.add_child(player_torso)
+
+    var neck := MeshInstance3D.new()
+    var neck_mesh := CylinderMesh.new()
+    neck_mesh.top_radius = 0.095
+    neck_mesh.bottom_radius = 0.12
+    neck_mesh.height = 0.20
+    neck.mesh = neck_mesh
+    neck.position = Vector3(0.0, 1.78, 0.0)
+    var neck_material := StandardMaterial3D.new()
+    neck_material.albedo_color = Color(0.66, 0.46, 0.32)
+    neck.material_override = neck_material
+    visual.add_child(neck)
+
+    var vest_front := _make_box_part(Vector3(0.43, 0.62, 0.055), Color(0.095, 0.17, 0.145))
+    vest_front.position = Vector3(0.0, 1.26, -0.36)
+    visual.add_child(vest_front)
+
+    for shoulder_x in [-0.39, 0.39]:
+        var shoulder_guard := MeshInstance3D.new()
+        var shoulder_mesh := SphereMesh.new()
+        shoulder_mesh.radius = 0.17
+        shoulder_mesh.height = 0.25
+        shoulder_guard.mesh = shoulder_mesh
+        shoulder_guard.position = Vector3(shoulder_x, 1.56, 0.0)
+        var shoulder_material := StandardMaterial3D.new()
+        shoulder_material.albedo_color = Color(0.22, 0.28, 0.22)
+        shoulder_material.roughness = 0.9
+        shoulder_guard.material_override = shoulder_material
+        visual.add_child(shoulder_guard)
 
     var head := MeshInstance3D.new()
     var head_mesh := SphereMesh.new()
@@ -305,15 +1042,14 @@ func _create_player() -> void:
     hair.material_override = hair_material
     visual.add_child(hair)
 
-    left_arm = _make_capsule_part(0.13, 0.78, Color(0.19, 0.34, 0.26))
-    left_arm.position = Vector3(-0.40, 1.25, 0)
-    left_arm.rotation.z = PI * 0.5
+    left_arm = _make_capsule_part(0.115, 0.76, Color(0.19, 0.34, 0.26))
+    left_arm.position = Vector3(-0.43, 1.17, 0)
     visual.add_child(left_arm)
 
-    right_arm = _make_capsule_part(0.13, 0.78, Color(0.19, 0.34, 0.26))
-    right_arm.position = Vector3(0.40, 1.25, 0)
-    right_arm.rotation.z = PI * 0.5
+    right_arm = _make_capsule_part(0.115, 0.76, Color(0.19, 0.34, 0.26))
+    right_arm.position = Vector3(0.43, 1.17, 0)
     visual.add_child(right_arm)
+    _apply_player_outfit()
 
     left_leg = _make_capsule_part(0.15, 0.82, Color(0.18, 0.20, 0.21))
     left_leg.position = Vector3(-0.17, 0.43, 0)
@@ -333,9 +1069,48 @@ func _create_player() -> void:
     backpack.material_override = backpack_material
     visual.add_child(backpack)
 
+    var scarf := _make_box_part(Vector3(0.54, 0.14, 0.43), Color(0.66, 0.30, 0.16))
+    scarf.position = Vector3(0.0, 1.64, -0.015)
+    visual.add_child(scarf)
+
+    var belt := _make_box_part(Vector3(0.68, 0.13, 0.40), Color(0.20, 0.14, 0.09))
+    belt.position = Vector3(0.0, 0.86, 0.0)
+    visual.add_child(belt)
+
+    var buckle := _make_box_part(Vector3(0.13, 0.12, 0.045), Color(0.78, 0.59, 0.27))
+    buckle.position = Vector3(0.0, 0.86, -0.218)
+    visual.add_child(buckle)
+
+    for boot_x in [-0.17, 0.17]:
+        var boot := _make_box_part(Vector3(0.34, 0.19, 0.48), Color(0.16, 0.12, 0.09))
+        boot.position = Vector3(boot_x, 0.12, -0.075)
+        visual.add_child(boot)
+
+    for hand_x in [-0.43, 0.43]:
+        var hand := MeshInstance3D.new()
+        var hand_mesh := SphereMesh.new()
+        hand_mesh.radius = 0.115
+        hand_mesh.height = 0.23
+        hand.mesh = hand_mesh
+        hand.position = Vector3(hand_x, 0.77, 0.0)
+        hand.material_override = skin_material
+        visual.add_child(hand)
+
+    var eye_material := StandardMaterial3D.new()
+    eye_material.albedo_color = Color(0.08, 0.07, 0.06)
+    for eye_x in [-0.085, 0.085]:
+        var eye := MeshInstance3D.new()
+        var eye_mesh := SphereMesh.new()
+        eye_mesh.radius = 0.026
+        eye_mesh.height = 0.052
+        eye.mesh = eye_mesh
+        eye.position = Vector3(eye_x, 1.91, -0.218)
+        eye.material_override = eye_material
+        visual.add_child(eye)
+
     camera_pivot = Node3D.new()
     camera_pivot.name = "CameraPivot"
-    camera_pivot.global_position = player.global_position + Vector3(0, 1.55, 0)
+    camera_pivot.position = player.position + Vector3(0, 1.55, 0)
     add_child(camera_pivot)
 
     camera = Camera3D.new()
@@ -344,6 +1119,17 @@ func _create_player() -> void:
     camera.rotation_degrees = Vector3(-14, 0, 0)
     camera.current = true
     camera_pivot.add_child(camera)
+
+func _make_box_part(size: Vector3, color: Color) -> MeshInstance3D:
+    var part := MeshInstance3D.new()
+    var mesh := BoxMesh.new()
+    mesh.size = size
+    part.mesh = mesh
+    var material := StandardMaterial3D.new()
+    material.albedo_color = color
+    material.roughness = 0.9
+    part.material_override = material
+    return part
 
 func _make_capsule_part(radius: float, height: float, color: Color) -> MeshInstance3D:
     var part := MeshInstance3D.new()
@@ -358,47 +1144,386 @@ func _make_capsule_part(radius: float, height: float, color: Color) -> MeshInsta
     return part
 
 func _create_hud() -> void:
+    game_ui_theme = _create_game_ui_theme()
     var layer := CanvasLayer.new()
     layer.name = "HUD"
     add_child(layer)
 
     var panel := PanelContainer.new()
-    panel.position = Vector2(18, 18)
-    panel.custom_minimum_size = Vector2(250, 62)
+    panel.theme = game_ui_theme
+    panel.position = Vector2(14, 14)
+    panel.custom_minimum_size = Vector2(252, 96)
     layer.add_child(panel)
 
+    var hud_column := VBoxContainer.new()
+    hud_column.add_theme_constant_override("separation", 3)
+    panel.add_child(hud_column)
+
+    var brand_logo := TextureRect.new()
+    brand_logo.name = "WorldsBrandLogo"
+    brand_logo.texture = load("res://assets/worlds_logo.svg")
+    brand_logo.custom_minimum_size = Vector2(136.0, 40.0)
+    brand_logo.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+    brand_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    brand_logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    hud_column.add_child(brand_logo)
+
     hud_label = Label.new()
-    hud_label.text = "WORLDS  •  EARLY ACCESS PROTOTYPE\nExplore the valley"
+    hud_label.text = "WORLDS  •  CONNECTING WORLD"
     hud_label.add_theme_color_override("font_color", Color(0.92, 0.95, 0.88))
-    hud_label.add_theme_font_size_override("font_size", 16)
-    panel.add_child(hud_label)
+    hud_label.add_theme_font_size_override("font_size", 12)
+    hud_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    hud_column.add_child(hud_label)
+
+    health_bar = ProgressBar.new()
+    health_bar.name = "HealthBar"
+    health_bar.min_value = 0.0
+    health_bar.max_value = 100.0
+    health_bar.value = health
+    health_bar.show_percentage = false
+    health_bar.custom_minimum_size.y = 12.0
+    hud_column.add_child(health_bar)
+    survival_bars["food"] = _create_survival_bar(hud_column, "أكل", hunger)
+    survival_bars["water"] = _create_survival_bar(hud_column, "ماء", thirst)
+    survival_bars["rest"] = _create_survival_bar(hud_column, "راحة", rest)
+    survival_bars["energy"] = _create_survival_bar(hud_column, "طاقة", stamina)
 
     mobile_controls = Control.new()
-    mobile_controls.name = "TouchControls"
+    mobile_controls.name = "TouchLabels"
     mobile_controls.set_anchors_preset(Control.PRESET_FULL_RECT)
+    mobile_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
     layer.add_child(mobile_controls)
 
-    var screen_size := get_viewport().get_visible_rect().size
-    _add_control_button("◀", Vector2(24, screen_size.y - 112), "left")
-    _add_control_button("▶", Vector2(144, screen_size.y - 112), "right")
-    _add_control_button("▲", Vector2(84, screen_size.y - 172), "forward")
-    _add_control_button("▼", Vector2(84, screen_size.y - 52), "back")
-    _add_control_button("USE", Vector2(screen_size.x - 132, screen_size.y - 178), "interact", true)
-    _add_control_button("JUMP", Vector2(screen_size.x - 136, screen_size.y - 104), "jump", true)
+    touch_button_layer = Node2D.new()
+    touch_button_layer.name = "MultiTouchButtons"
+    layer.add_child(touch_button_layer)
 
-func _add_control_button(label_text: String, position: Vector2, action: String, is_jump := false) -> void:
-    var button := Button.new()
-    button.text = label_text
-    button.position = position
-    button.custom_minimum_size = Vector2(56, 56) if not is_jump else Vector2(112, 64)
-    button.focus_mode = Control.FOCUS_NONE
-    button.modulate = Color(1.0, 1.0, 1.0, 0.82)
-    button.add_theme_font_size_override("font_size", 18 if not is_jump else 15)
-    button.button_down.connect(_on_control_pressed.bind(action))
-    button.button_up.connect(_on_control_released.bind(action))
-    mobile_controls.add_child(button)
+    normal_touch_texture = _make_touch_texture(Color(0.08, 0.28, 0.25, 0.76))
+    pressed_touch_texture = _make_touch_texture(Color(0.16, 0.58, 0.46, 0.94))
+    var screen_size := get_viewport().get_visible_rect().size
+    _create_virtual_joystick(screen_size)
+    _add_control_button("تفاعل", Vector2(screen_size.x * 0.75, screen_size.y * 0.70), "interact", true)
+    _add_control_button("بناء", Vector2(screen_size.x * 0.88, screen_size.y * 0.70), "build", true)
+    _add_control_button("ركض", Vector2(screen_size.x * 0.75, screen_size.y * 0.86), "run", true)
+    _add_control_button("قفز", Vector2(screen_size.x * 0.88, screen_size.y * 0.86), "jump", true)
+
+    var menu_button := Button.new()
+    menu_button.name = "OpenMainMenu"
+    menu_button.text = "القائمة"
+    menu_button.position = Vector2(maxf(16.0, screen_size.x - 112.0), 16.0)
+    menu_button.custom_minimum_size = Vector2(96.0, 42.0)
+    menu_button.pressed.connect(_return_to_main_menu)
+    layer.add_child(menu_button)
+
+    _create_network_panel(layer)
+    _create_settings_panel(layer)
+    _create_build_panel(layer)
+    _create_minimap(layer)
+    _create_main_menu()
+
+
+func _create_main_menu() -> void:
+    main_menu_layer = CanvasLayer.new()
+    main_menu_layer.name = "MainMenu"
+    main_menu_layer.layer = 20
+    add_child(main_menu_layer)
+
+    var backdrop := ColorRect.new()
+    backdrop.name = "MenuBackdrop"
+    backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+    backdrop.color = Color(0.025, 0.075, 0.065, 0.94)
+    backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+    main_menu_layer.add_child(backdrop)
+
+    var center := CenterContainer.new()
+    center.set_anchors_preset(Control.PRESET_FULL_RECT)
+    main_menu_layer.add_child(center)
+
+    main_menu_panel = PanelContainer.new()
+    main_menu_panel.theme = game_ui_theme
+    var menu_screen_size := get_viewport().get_visible_rect().size
+    main_menu_panel.custom_minimum_size = Vector2(minf(390.0, maxf(280.0, menu_screen_size.x - 32.0)), 0.0)
+    center.add_child(main_menu_panel)
+
+    var column := VBoxContainer.new()
+    column.add_theme_constant_override("separation", 12)
+    column.alignment = BoxContainer.ALIGNMENT_CENTER
+    main_menu_panel.add_child(column)
+
+    var logo := TextureRect.new()
+    logo.texture = load("res://assets/worlds_logo.svg")
+    logo.custom_minimum_size = Vector2(minf(330.0, menu_screen_size.x - 64.0), 110.0)
+    logo.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+    logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    column.add_child(logo)
+
+    var tagline := Label.new()
+    tagline.text = "عالم مفتوح ينتظر اكتشافك"
+    tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    tagline.add_theme_color_override("font_color", Color(0.72, 0.84, 0.76))
+    tagline.add_theme_font_size_override("font_size", 13)
+    column.add_child(tagline)
+
+    var welcome := Label.new()
+    welcome.name = "MenuWelcome"
+    welcome.text = "مرحباً، %s" % player_name
+    welcome.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    welcome.add_theme_font_size_override("font_size", 20)
+    column.add_child(welcome)
+
+    var outfit_caption := Label.new()
+    outfit_caption.text = "اختر مظهر المستكشف"
+    outfit_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    outfit_caption.add_theme_font_size_override("font_size", 12)
+    outfit_caption.add_theme_color_override("font_color", Color(0.72, 0.84, 0.76))
+    column.add_child(outfit_caption)
+
+    outfit_option = OptionButton.new()
+    outfit_option.name = "ExplorerStyle"
+    outfit_option.add_item("كشاف الغابة", 0)
+    outfit_option.add_item("رحّالة النهر", 1)
+    outfit_option.add_item("درب الكهرمان", 2)
+    outfit_option.add_item("صنوبر الليل", 3)
+    outfit_option.select(player_outfit_index)
+    outfit_option.item_selected.connect(_on_outfit_selected)
+    column.add_child(outfit_option)
+
+    var start_button := Button.new()
+    start_button.text = "متابعة اللعب"
+    start_button.custom_minimum_size.y = 52
+    start_button.pressed.connect(_close_main_menu)
+    column.add_child(start_button)
+
+    var multiplayer_button := Button.new()
+    multiplayer_button.text = "اللعب مع صديق عبر الواي فاي"
+    multiplayer_button.custom_minimum_size.y = 46
+    multiplayer_button.pressed.connect(_open_multiplayer_from_menu)
+    column.add_child(multiplayer_button)
+
+    var settings_button := Button.new()
+    settings_button.text = "الإعدادات"
+    settings_button.custom_minimum_size.y = 46
+    settings_button.pressed.connect(_open_settings_from_menu)
+    column.add_child(settings_button)
+
+    var hint := Label.new()
+    hint.text = "رحلتك وتقدمك يُحفظان تلقائياً"
+    hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    hint.add_theme_color_override("font_color", Color(0.65, 0.73, 0.68))
+    hint.add_theme_font_size_override("font_size", 12)
+    column.add_child(hint)
+
+
+func _close_main_menu() -> void:
+    if main_menu_layer:
+        main_menu_layer.visible = false
+    if settings_panel:
+        settings_panel.visible = false
+    if network_panel:
+        network_panel.visible = false
+
+
+func _open_multiplayer_from_menu() -> void:
+    if main_menu_layer:
+        main_menu_layer.visible = false
+    if network_panel:
+        network_panel.visible = true
+    if settings_panel:
+        settings_panel.visible = false
+
+
+func _open_settings_from_menu() -> void:
+    if main_menu_layer:
+        main_menu_layer.visible = false
+    if settings_panel:
+        settings_panel.visible = true
+    if network_panel:
+        network_panel.visible = false
+
+func _return_to_main_menu() -> void:
+    if settings_panel:
+        settings_panel.visible = false
+    if network_panel:
+        network_panel.visible = false
+    if main_menu_layer:
+        main_menu_layer.visible = true
+
+func _is_frontend_visible() -> bool:
+    return (main_menu_layer != null and main_menu_layer.visible) or (network_panel != null and network_panel.visible) or (settings_panel != null and settings_panel.visible)
+
+func _create_survival_bar(parent: VBoxContainer, caption: String, initial_value: float) -> ProgressBar:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 8)
+    var title := Label.new()
+    title.text = caption
+    title.custom_minimum_size.x = 42.0
+    title.add_theme_font_size_override("font_size", 11)
+    row.add_child(title)
+    var bar := ProgressBar.new()
+    bar.min_value = 0.0
+    bar.max_value = 100.0
+    bar.value = initial_value
+    bar.show_percentage = true
+    bar.custom_minimum_size.y = 10.0
+    bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    bar.add_theme_font_size_override("font_size", 10)
+    row.add_child(bar)
+    parent.add_child(row)
+    return bar
+
+func _create_virtual_joystick(screen_size: Vector2) -> void:
+    joystick_center = Vector2(screen_size.x * 0.16, screen_size.y * 0.79)
+
+    joystick_base = TextureRect.new()
+    joystick_base.name = "VirtualJoystickBase"
+    joystick_base.texture = normal_touch_texture
+    joystick_base.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    joystick_base.stretch_mode = TextureRect.STRETCH_SCALE
+    joystick_base.size = Vector2(142.0, 142.0)
+    joystick_base.position = joystick_center - joystick_base.size * 0.5
+    joystick_base.modulate = Color(1.0, 1.0, 1.0, 0.72)
+    joystick_base.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    mobile_controls.add_child(joystick_base)
+
+    joystick_knob = TextureRect.new()
+    joystick_knob.name = "VirtualJoystickKnob"
+    joystick_knob.texture = pressed_touch_texture
+    joystick_knob.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    joystick_knob.stretch_mode = TextureRect.STRETCH_SCALE
+    joystick_knob.size = Vector2(58.0, 58.0)
+    joystick_knob.position = joystick_center - joystick_knob.size * 0.5
+    joystick_knob.modulate = Color(1.0, 1.0, 1.0, 0.92)
+    joystick_knob.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    mobile_controls.add_child(joystick_knob)
+
+    var movement_caption := Label.new()
+    movement_caption.name = "MovementCaption"
+    movement_caption.text = "حركة"
+    movement_caption.position = joystick_center + Vector2(-38.0, 45.0)
+    movement_caption.size = Vector2(76.0, 18.0)
+    movement_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    movement_caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    movement_caption.add_theme_color_override("font_color", Color(0.96, 1.0, 0.92, 0.94))
+    movement_caption.add_theme_font_size_override("font_size", 10)
+    movement_caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    mobile_controls.add_child(movement_caption)
+
+func _update_virtual_joystick(pointer_position: Vector2) -> void:
+    var offset := pointer_position - joystick_center
+    var radius := 52.0
+    if offset.length() > radius:
+        offset = offset.normalized() * radius
+    joystick_vector = offset / radius
+    if joystick_knob:
+        joystick_knob.position = joystick_center + offset - joystick_knob.size * 0.5
+
+func _reset_virtual_joystick() -> void:
+    joystick_touch_index = -1
+    joystick_vector = Vector2.ZERO
+    if joystick_knob:
+        joystick_knob.position = joystick_center - joystick_knob.size * 0.5
+
+func _make_touch_texture(fill_color: Color) -> Texture2D:
+    var image := Image.create(112, 112, false, Image.FORMAT_RGBA8)
+    var edge_color := Color(0.86, 0.92, 0.82, 0.92)
+    for y in range(112):
+        for x in range(112):
+            var distance := Vector2(float(x) - 55.5, float(y) - 55.5).length()
+            if distance <= 53.0:
+                image.set_pixel(x, y, edge_color if distance >= 48.0 else fill_color)
+    return ImageTexture.create_from_image(image)
+
+func _add_control_button(label_text: String, center: Vector2, action: String, is_action_button := false) -> void:
+    var button := TouchScreenButton.new()
+    button.name = "Touch_%s" % action
+    button.position = center
+    button.scale = Vector2.ONE * control_scale
+    var hit_shape := CircleShape2D.new()
+    hit_shape.radius = (53.0 if is_action_button else 47.0)
+    button.shape = hit_shape
+    button.texture_normal = normal_touch_texture
+    button.texture_pressed = pressed_touch_texture
+    button.visibility_mode = TouchScreenButton.VISIBILITY_ALWAYS
+    # TouchScreenButton consumes its own touch events. Connect its signals
+    # directly so the visible control always drives its intended gameplay action.
+    button.pressed.connect(_on_control_pressed.bind(action))
+    button.released.connect(_on_control_released.bind(action))
+    button.pressed.connect(_set_touch_button_visual.bind(action, true))
+    button.released.connect(_set_touch_button_visual.bind(action, false))
+    touch_button_layer.add_child(button)
+    action_buttons[action] = button
+
+    var caption := Label.new()
+    caption.text = label_text
+    caption.position = center - Vector2(42, 20) * control_scale
+    caption.size = Vector2(84, 40) * control_scale
+    caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    caption.add_theme_color_override("font_color", Color(0.98, 1.0, 0.94))
+    caption.add_theme_font_size_override("font_size", roundi((14 if is_action_button else 27) * control_scale))
+    caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    mobile_controls.add_child(caption)
+    action_captions[action] = caption
+
+func _move_action_button(action: String, center: Vector2) -> void:
+    if not action_buttons.has(action) or not action_captions.has(action):
+        return
+    var screen_size := get_viewport().get_visible_rect().size
+    var safe_center := Vector2(
+        clampf(center.x, 58.0 * control_scale, screen_size.x - 58.0 * control_scale),
+        clampf(center.y, 58.0 * control_scale, screen_size.y - 58.0 * control_scale)
+    )
+    var button: TouchScreenButton = action_buttons[action]
+    var caption: Label = action_captions[action]
+    button.position = safe_center
+    caption.position = safe_center - Vector2(42.0, 20.0) * control_scale
+
+func _action_button_at(pointer_position: Vector2) -> String:
+    for action in action_buttons:
+        var button: TouchScreenButton = action_buttons[action]
+        if pointer_position.distance_to(button.position) <= 60.0 * control_scale:
+            return str(action)
+    return ""
+
+func _set_touch_button_visual(action: String, is_pressed: bool) -> void:
+    if not action_buttons.has(action):
+        return
+    var button: TouchScreenButton = action_buttons[action]
+    button.modulate = Color(1.0, 0.88, 0.62, button_opacity) if is_pressed else Color(1.0, 1.0, 1.0, button_opacity)
+
+func _set_control_layout_edit(enabled: bool) -> void:
+    control_layout_edit_mode = enabled
+    layout_drag_action = ""
+    layout_touch_index = -1
+    pressed_actions.clear()
+    # Let the root receive touch events while dragging controls; normal mode
+    # returns input ownership to the dedicated multitouch button nodes.
+    for action in action_buttons:
+        var action_button: TouchScreenButton = action_buttons[action]
+        action_button.set_process_input(not enabled)
+    if layout_status_label:
+        layout_status_label.text = "اسحب الأزرار لتغيير أماكنها ثم اضغط تم." if enabled else "تم حفظ ترتيب الأزرار."
+    if joystick_base:
+        joystick_base.modulate = Color(1.0, 0.8, 0.35, 0.92) if enabled else Color(1.0, 1.0, 1.0, 0.72)
+
+func _reset_control_layout() -> void:
+    var screen_size := get_viewport().get_visible_rect().size
+    _move_action_button("interact", Vector2(screen_size.x * 0.75, screen_size.y * 0.70))
+    _move_action_button("build", Vector2(screen_size.x * 0.88, screen_size.y * 0.70))
+    _move_action_button("run", Vector2(screen_size.x * 0.75, screen_size.y * 0.86))
+    _move_action_button("jump", Vector2(screen_size.x * 0.88, screen_size.y * 0.86))
+    _save_game()
+    if layout_status_label:
+        layout_status_label.text = "تمت استعادة ترتيب الأزرار الافتراضي."
 
 func _on_control_pressed(action: String) -> void:
+    if control_layout_edit_mode:
+        return
+    if action == "build":
+        if build_panel:
+            build_panel.visible = not build_panel.visible
+            _update_inventory_ui()
+        return
     if action == "interact":
         _try_interact()
         return
@@ -407,16 +1532,589 @@ func _on_control_pressed(action: String) -> void:
 func _on_control_released(action: String) -> void:
     pressed_actions.erase(action)
 
+func _paint_map_marker(map_image: Image, world_position: Vector3, color: Color, radius: int) -> void:
+    if map_image == null or WORLD_SIZE <= 0.0:
+        return
+    var pixel_x := roundi((world_position.x + WORLD_SIZE * 0.5) / WORLD_SIZE * 191.0)
+    var pixel_y := roundi((world_position.z + WORLD_SIZE * 0.5) / WORLD_SIZE * 191.0)
+    for offset_y in range(-radius, radius + 1):
+        for offset_x in range(-radius, radius + 1):
+            if offset_x * offset_x + offset_y * offset_y > radius * radius:
+                continue
+            var px := pixel_x + offset_x
+            var py := pixel_y + offset_y
+            if px >= 0 and px < 192 and py >= 0 and py < 192:
+                map_image.set_pixel(px, py, color)
+
+func _create_minimap(layer: CanvasLayer) -> void:
+    var map_image := Image.create(192, 192, false, Image.FORMAT_RGBA8)
+    for y in range(192):
+        for x in range(192):
+            var world_x := (float(x) / 191.0 - 0.5) * WORLD_SIZE
+            var world_z := (float(y) / 191.0 - 0.5) * WORLD_SIZE
+            var pixel_color := Color(0.20, 0.39, 0.18)
+            if world_x > 125.0:
+                pixel_color = Color(0.66, 0.53, 0.31)
+            if world_z < -125.0:
+                pixel_color = Color(0.76, 0.82, 0.83)
+            var river_center := sin(world_z * 0.018) * 18.0
+            if absf(world_x - river_center) < 5.0:
+                pixel_color = Color(0.10, 0.40, 0.58)
+            map_image.set_pixel(x, y, pixel_color)
+
+    _paint_map_marker(map_image, village_well_position, Color(0.98, 0.79, 0.32), 3)
+    _paint_map_marker(map_image, river_pavilion_position, Color(0.30, 0.94, 0.80), 3)
+    _paint_map_marker(map_image, river_crossing_position, Color(0.92, 0.91, 0.76), 2)
+    _paint_map_marker(map_image, valley_lookout_position, Color(1.0, 0.74, 0.35), 3)
+    var map_texture := ImageTexture.create_from_image(map_image)
+    minimap_panel = PanelContainer.new()
+    minimap_panel.theme = game_ui_theme
+    minimap_panel.name = "WorldMinimap"
+    minimap_panel.position = Vector2(get_viewport().get_visible_rect().size.x * 0.5 - 96.0, 58.0)
+    minimap_panel.custom_minimum_size = Vector2(192.0, 218.0)
+    layer.add_child(minimap_panel)
+
+    var map_column := VBoxContainer.new()
+    map_column.add_theme_constant_override("separation", 3)
+    minimap_panel.add_child(map_column)
+
+    var header := HBoxContainer.new()
+    map_column.add_child(header)
+
+    var title := Label.new()
+    title.text = "خريطة العالم"
+    title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    title.add_theme_font_size_override("font_size", 14)
+    header.add_child(title)
+
+    minimap_region_label = Label.new()
+    minimap_region_label.text = "الوادي الأخضر"
+    minimap_region_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    minimap_region_label.add_theme_font_size_override("font_size", 12)
+    map_column.add_child(minimap_region_label)
+
+    var map_frame := Control.new()
+    map_frame.custom_minimum_size = Vector2(minimap_size, minimap_size)
+    map_frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+    map_column.add_child(map_frame)
+
+    minimap_background = TextureRect.new()
+    minimap_background.texture = map_texture
+    minimap_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    minimap_background.stretch_mode = TextureRect.STRETCH_SCALE
+    minimap_background.size = Vector2(minimap_size, minimap_size)
+    map_frame.add_child(minimap_background)
+
+    var border := ReferenceRect.new()
+    border.border_color = Color(0.85, 0.89, 0.79, 0.85)
+    border.editor_only = false
+    border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    border.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    map_frame.add_child(border)
+
+    minimap_marker = Polygon2D.new()
+    minimap_marker.name = "PlayerMapArrow"
+    minimap_marker.polygon = PackedVector2Array([
+        Vector2(0.0, -7.0),
+        Vector2(5.5, 6.0),
+        Vector2(0.0, 3.2),
+        Vector2(-5.5, 6.0)
+    ])
+    minimap_marker.color = Color(1.0, 0.93, 0.54)
+    minimap_marker.position = Vector2(minimap_size * 0.5, minimap_size * 0.5)
+    minimap_background.add_child(minimap_marker)
+
+    minimap_toggle_button = Button.new()
+    minimap_toggle_button.name = "ToggleWorldMap"
+    minimap_toggle_button.text = "إظهار الخريطة"
+    minimap_toggle_button.position = Vector2(get_viewport().get_visible_rect().size.x * 0.5 - 72.0, 18.0)
+    minimap_toggle_button.custom_minimum_size = Vector2(144.0, 34.0)
+    minimap_toggle_button.pressed.connect(_toggle_minimap)
+    layer.add_child(minimap_toggle_button)
+    minimap_panel.visible = false
+    _update_minimap()
+
+func _toggle_minimap() -> void:
+    if not minimap_panel:
+        return
+    minimap_panel.visible = not minimap_panel.visible
+    if minimap_toggle_button:
+        minimap_toggle_button.text = "إخفاء الخريطة" if minimap_panel.visible else "إظهار الخريطة"
+
+func _update_minimap() -> void:
+    if not player or not minimap_marker:
+        return
+    var half_world := WORLD_SIZE * 0.5
+    var normalized_x := clampf((player.global_position.x + half_world) / WORLD_SIZE, 0.0, 1.0)
+    var normalized_z := clampf((player.global_position.z + half_world) / WORLD_SIZE, 0.0, 1.0)
+    minimap_marker.position = Vector2(normalized_x * minimap_size, normalized_z * minimap_size)
+    minimap_marker.rotation = player.rotation.y
+    if minimap_region_label:
+        if player.global_position.x > 125.0:
+            minimap_region_label.text = "كثبان الشرق"
+        elif player.global_position.z < -125.0:
+            minimap_region_label.text = "مرتفعات الشمال"
+        else:
+            minimap_region_label.text = "الوادي الأخضر"
+
+func _create_network_panel(layer: CanvasLayer) -> void:
+    var screen_size := get_viewport().get_visible_rect().size
+    network_panel = PanelContainer.new()
+    network_panel.theme = game_ui_theme
+    network_panel.name = "LANPanel"
+    var network_width := minf(310.0, maxf(260.0, screen_size.x - 32.0))
+    network_panel.position = Vector2(maxf(16.0, screen_size.x - network_width - 16.0), 18.0)
+    network_panel.custom_minimum_size = Vector2(network_width, 0.0)
+    layer.add_child(network_panel)
+
+    var column := VBoxContainer.new()
+    column.add_theme_constant_override("separation", 5)
+    network_panel.add_child(column)
+
+    var title := Label.new()
+    title.text = "اللعب الجماعي عبر الواي فاي"
+    title.add_theme_color_override("font_color", Color(0.75, 0.92, 0.78))
+    title.add_theme_font_size_override("font_size", 17)
+    column.add_child(title)
+
+    var player_name_row := HBoxContainer.new()
+    var player_name_caption := Label.new()
+    player_name_caption.text = "اسم اللاعب"
+    player_name_row.add_child(player_name_caption)
+    player_name_input = LineEdit.new()
+    player_name_input.text = player_name
+    player_name_input.placeholder_text = "اكتب اسمك داخل اللعبة"
+    player_name_input.max_length = 18
+    player_name_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    player_name_input.virtual_keyboard_enabled = true
+    player_name_row.add_child(player_name_input)
+    column.add_child(player_name_row)
+
+    var apply_name_button := Button.new()
+    apply_name_button.text = "حفظ اسم اللاعب"
+    apply_name_button.pressed.connect(_apply_player_name)
+    column.add_child(apply_name_button)
+
+    var host_button := Button.new()
+    host_button.text = "إنشاء عالم واستضافة"
+    host_button.custom_minimum_size.y = 40
+    host_button.pressed.connect(_host_lan_game)
+    column.add_child(host_button)
+
+    host_ip_label = Label.new()
+    host_ip_label.text = "عنوان هاتف المضيف يظهر هنا بعد إنشاء العالم"
+    host_ip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(host_ip_label)
+
+    address_input = LineEdit.new()
+    address_input.placeholder_text = "أدخل عنوان IP لهاتف المضيف"
+    address_input.virtual_keyboard_enabled = true
+    address_input.clear_button_enabled = true
+    column.add_child(address_input)
+
+    var join_button := Button.new()
+    join_button.text = "الانضمام إلى العالم"
+    join_button.custom_minimum_size.y = 40
+    join_button.pressed.connect(_join_lan_game)
+    column.add_child(join_button)
+
+    var copy_ip_button := Button.new()
+    copy_ip_button.text = "نسخ عنوان المضيف"
+    copy_ip_button.pressed.connect(_copy_host_ip)
+    column.add_child(copy_ip_button)
+
+    var leave_button := Button.new()
+    leave_button.text = "مغادرة الجلسة"
+    leave_button.pressed.connect(_disconnect_lan_game)
+    column.add_child(leave_button)
+
+    network_status_label = Label.new()
+    network_status_label.text = "اتصلوا بنفس شبكة الواي فاي. هاتف يستضيف والثاني ينضم."
+    network_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(network_status_label)
+
+    var network_back_button := Button.new()
+    network_back_button.text = "العودة إلى القائمة الرئيسية"
+    network_back_button.custom_minimum_size.y = 42
+    network_back_button.pressed.connect(_return_to_main_menu)
+    column.add_child(network_back_button)
+    network_panel.visible = false
+
+func _get_player_outfit_color(index: int) -> Color:
+    var palette: Array[Color] = [
+        Color(0.16, 0.30, 0.23),
+        Color(0.13, 0.34, 0.43),
+        Color(0.55, 0.29, 0.13),
+        Color(0.22, 0.23, 0.38)
+    ]
+    return palette[clampi(index, 0, palette.size() - 1)]
+
+func _apply_player_outfit() -> void:
+    var outfit_material := StandardMaterial3D.new()
+    outfit_material.albedo_color = _get_player_outfit_color(player_outfit_index)
+    outfit_material.roughness = 0.9
+    if player_torso:
+        player_torso.material_override = outfit_material
+    if left_arm:
+        left_arm.material_override = outfit_material
+    if right_arm:
+        right_arm.material_override = outfit_material
+
+func _on_outfit_selected(index: int) -> void:
+    player_outfit_index = clampi(index, 0, 3)
+    if outfit_option:
+        outfit_option.select(player_outfit_index)
+    _apply_player_outfit()
+    if lan_active:
+        if multiplayer.is_server():
+            network_player_outfits[1] = player_outfit_index
+            rpc("_rpc_set_remote_player_outfit", 1, player_outfit_index)
+        elif multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+            rpc_id(1, "_rpc_submit_player_outfit", player_outfit_index)
+    _save_game()
+
+func _apply_remote_player_outfit(peer_id: int, index: int) -> void:
+    network_player_outfits[peer_id] = clampi(index, 0, 3)
+    if not network_remote_players.has(peer_id):
+        return
+    var avatar := network_remote_players[peer_id] as Node3D
+    var body := avatar.find_child("RemoteBody", true, false) as MeshInstance3D
+    if body:
+        var material := StandardMaterial3D.new()
+        material.albedo_color = _get_player_outfit_color(index)
+        material.roughness = 0.9
+        body.material_override = material
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_submit_player_outfit(requested_index: int) -> void:
+    if not multiplayer.is_server():
+        return
+    var sender := multiplayer.get_remote_sender_id()
+    if sender <= 1:
+        return
+    var safe_index := clampi(requested_index, 0, 3)
+    _apply_remote_player_outfit(sender, safe_index)
+    rpc("_rpc_set_remote_player_outfit", sender, safe_index)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_remote_player_outfit(peer_id: int, outfit_index: int) -> void:
+    _apply_remote_player_outfit(peer_id, outfit_index)
+
+func _apply_player_name() -> void:
+    if not player_name_input:
+        return
+    var clean_name := player_name_input.text.strip_edges()
+    if clean_name.is_empty():
+        clean_name = "Wanderer"
+    player_name = clean_name.substr(0, 18)
+    player_name_input.text = player_name
+    var welcome_label := main_menu_layer.find_child("MenuWelcome", true, false) as Label if main_menu_layer else null
+    if welcome_label:
+        welcome_label.text = "مرحباً، %s" % player_name
+    if lan_active:
+        if multiplayer.is_server():
+            network_player_names[1] = player_name
+            rpc("_rpc_set_remote_player_name", 1, player_name)
+        elif multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+            rpc_id(1, "_rpc_submit_player_name", player_name)
+    _show_status_note("Player name saved: " + player_name)
+    _save_game()
+
+func _copy_host_ip() -> void:
+    var address := _get_lan_ipv4()
+    if address == "Wi-Fi IP not detected":
+        _set_network_status("Could not detect Wi-Fi IP. Check the phone connection.")
+        return
+    DisplayServer.clipboard_set(address)
+    _set_network_status("Host IP copied: %s  •  UDP %d" % [address, LAN_PORT])
+
+func _create_settings_panel(layer: CanvasLayer) -> void:
+    var screen_size := get_viewport().get_visible_rect().size
+    settings_panel = PanelContainer.new()
+    settings_panel.theme = game_ui_theme
+    settings_panel.name = "PerformancePanel"
+    var settings_width := minf(310.0, maxf(260.0, screen_size.x - 32.0))
+    var settings_height := minf(360.0, maxf(260.0, screen_size.y - 32.0))
+    settings_panel.position = Vector2(maxf(16.0, screen_size.x - settings_width - 16.0), 16.0)
+    settings_panel.custom_minimum_size = Vector2(settings_width, settings_height)
+    layer.add_child(settings_panel)
+
+    var scroll := ScrollContainer.new()
+    scroll.custom_minimum_size = Vector2(settings_width - 12.0, settings_height - 12.0)
+    settings_panel.add_child(scroll)
+
+    var column := VBoxContainer.new()
+    column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    column.add_theme_constant_override("separation", 4)
+    scroll.add_child(column)
+
+    var title := Label.new()
+    title.text = "إعدادات الرسوم والتحكم"
+    title.add_theme_font_size_override("font_size", 15)
+    column.add_child(title)
+
+    var quality_row := HBoxContainer.new()
+    var quality_label := Label.new()
+    quality_label.text = "جودة الرسوم"
+    quality_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    quality_row.add_child(quality_label)
+
+    quality_option = OptionButton.new()
+    quality_option.add_item("تلقائي", 0)
+    quality_option.add_item("منخفض", 1)
+    quality_option.add_item("متوازن", 2)
+    quality_option.add_item("مرتفع", 3)
+    quality_option.add_item("فائق", 4)
+    quality_option.select(0)
+    quality_option.item_selected.connect(_on_quality_selected)
+    quality_row.add_child(quality_option)
+    column.add_child(quality_row)
+
+    var fps_row := HBoxContainer.new()
+    var fps_text := Label.new()
+    fps_text.text = "حد الإطارات"
+    fps_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    fps_row.add_child(fps_text)
+
+    fps_option = OptionButton.new()
+    for fps_value in [20, 30, 45, 60, 90, 120]:
+        fps_option.add_item("%d FPS" % fps_value, fps_value)
+    fps_option.select(3)
+    fps_option.item_selected.connect(_on_fps_selected)
+    fps_row.add_child(fps_option)
+    column.add_child(fps_row)
+
+    fps_label = Label.new()
+    fps_label.text = "عدد الإطارات الفعلي يعتمد على قوة الهاتف والمشهد."
+    fps_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(fps_label)
+
+    metrics_label = Label.new()
+    metrics_label.text = "قراءة الأداء المباشر..."
+    metrics_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(metrics_label)
+
+    var sensitivity_label := Label.new()
+    sensitivity_label.text = "حساسية الكاميرا"
+    column.add_child(sensitivity_label)
+    camera_sensitivity_slider = HSlider.new()
+    camera_sensitivity_slider.min_value = 0.003
+    camera_sensitivity_slider.max_value = 0.012
+    camera_sensitivity_slider.step = 0.001
+    camera_sensitivity_slider.value = camera_sensitivity
+    camera_sensitivity_slider.value_changed.connect(_on_camera_sensitivity_changed)
+    column.add_child(camera_sensitivity_slider)
+
+    var camera_distance_label := Label.new()
+    camera_distance_label.text = "بُعد الكاميرا"
+    column.add_child(camera_distance_label)
+    camera_distance_slider = HSlider.new()
+    camera_distance_slider.min_value = 4.0
+    camera_distance_slider.max_value = 12.0
+    camera_distance_slider.step = 0.5
+    camera_distance_slider.value = camera_distance
+    camera_distance_slider.value_changed.connect(_on_camera_distance_changed)
+    column.add_child(camera_distance_slider)
+
+    var fov_label := Label.new()
+    fov_label.text = "مجال رؤية الكاميرا"
+    column.add_child(fov_label)
+    camera_fov_slider = HSlider.new()
+    camera_fov_slider.min_value = 55.0
+    camera_fov_slider.max_value = 85.0
+    camera_fov_slider.step = 1.0
+    camera_fov_slider.value = camera_fov
+    camera_fov_slider.value_changed.connect(_on_camera_fov_changed)
+    column.add_child(camera_fov_slider)
+
+    var scale_label := Label.new()
+    scale_label.text = "حجم أزرار اللمس"
+    column.add_child(scale_label)
+    control_scale_slider = HSlider.new()
+    control_scale_slider.min_value = 0.75
+    control_scale_slider.max_value = 1.35
+    control_scale_slider.step = 0.05
+    control_scale_slider.value = control_scale
+    control_scale_slider.value_changed.connect(_on_control_scale_changed)
+    column.add_child(control_scale_slider)
+
+    var opacity_label := Label.new()
+    opacity_label.text = "شفافية أزرار اللمس"
+    column.add_child(opacity_label)
+    button_opacity_slider = HSlider.new()
+    button_opacity_slider.min_value = 0.4
+    button_opacity_slider.max_value = 1.0
+    button_opacity_slider.step = 0.05
+    button_opacity_slider.value = button_opacity
+    button_opacity_slider.value_changed.connect(_on_button_opacity_changed)
+    column.add_child(button_opacity_slider)
+
+    var audio_title := Label.new()
+    audio_title.text = "مستوى الصوت العام"
+    column.add_child(audio_title)
+    master_volume_slider = HSlider.new()
+    master_volume_slider.min_value = 0.0
+    master_volume_slider.max_value = 1.0
+    master_volume_slider.step = 0.05
+    master_volume_slider.value = 1.0
+    master_volume_slider.value_changed.connect(_on_master_volume_changed)
+    column.add_child(master_volume_slider)
+
+    var layout_button := Button.new()
+    layout_button.text = "تعديل أماكن الأزرار"
+    layout_button.pressed.connect(_set_control_layout_edit.bind(true))
+    column.add_child(layout_button)
+
+    var done_layout_button := Button.new()
+    done_layout_button.text = "تم / حفظ الترتيب"
+    done_layout_button.pressed.connect(_finish_control_layout_edit)
+    column.add_child(done_layout_button)
+
+    var reset_layout_button := Button.new()
+    reset_layout_button.text = "إرجاع الأزرار لمكانها"
+    reset_layout_button.pressed.connect(_reset_control_layout)
+    column.add_child(reset_layout_button)
+
+    layout_status_label = Label.new()
+    layout_status_label.text = "حرّك الأزرار للمكان المناسب ثم احفظ الترتيب."
+    layout_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(layout_status_label)
+
+    var settings_back_button := Button.new()
+    settings_back_button.text = "العودة إلى القائمة الرئيسية"
+    settings_back_button.custom_minimum_size.y = 42
+    settings_back_button.pressed.connect(_return_to_main_menu)
+    column.add_child(settings_back_button)
+    settings_panel.visible = false
+
+func _on_master_volume_changed(value: float) -> void:
+    var safe_volume := clampf(value, 0.0, 1.0)
+    AudioServer.set_bus_volume_db(0, linear_to_db(maxf(0.0001, safe_volume)))
+    if safe_volume <= 0.001:
+        AudioServer.set_bus_mute(0, true)
+    else:
+        AudioServer.set_bus_mute(0, false)
+
+func _on_camera_sensitivity_changed(value: float) -> void:
+    camera_sensitivity = clampf(value, 0.003, 0.012)
+
+func _sync_settings_sliders() -> void:
+    if camera_sensitivity_slider:
+        camera_sensitivity_slider.value = camera_sensitivity
+    if camera_distance_slider:
+        camera_distance_slider.value = camera_distance
+    if camera_fov_slider:
+        camera_fov_slider.value = camera_fov
+    if control_scale_slider:
+        control_scale_slider.value = control_scale
+    if button_opacity_slider:
+        button_opacity_slider.value = button_opacity
+
+func _on_camera_distance_changed(value: float) -> void:
+    camera_distance = clampf(value, 4.0, 12.0)
+    if camera:
+        camera.position = Vector3(0.0, camera_distance * 0.4, camera_distance)
+
+func _on_camera_fov_changed(value: float) -> void:
+    camera_fov = clampf(value, 55.0, 85.0)
+    if camera:
+        camera.fov = camera_fov
+
+func _on_button_opacity_changed(value: float) -> void:
+    button_opacity = clampf(value, 0.4, 1.0)
+    for action in action_buttons:
+        var button: TouchScreenButton = action_buttons[action]
+        button.modulate = Color(1.0, 1.0, 1.0, button_opacity)
+
+func _on_control_scale_changed(value: float) -> void:
+    control_scale = clampf(value, 0.75, 1.35)
+    for action in action_buttons:
+        var button: TouchScreenButton = action_buttons[action]
+        var caption: Label = action_captions[action]
+        button.scale = Vector2.ONE * control_scale
+        var shape := CircleShape2D.new()
+        shape.radius = 53.0 if str(action) in ["interact", "jump", "run", "build"] else 47.0
+        button.shape = shape
+        caption.position = button.position - Vector2(42.0, 20.0) * control_scale
+        caption.size = Vector2(84.0, 40.0) * control_scale
+    for action in action_captions:
+        var caption: Label = action_captions[action]
+        caption.add_theme_font_size_override("font_size", roundi((14 if str(action) in ["interact", "jump", "run", "build"] else 27) * control_scale))
+
+func _finish_control_layout_edit() -> void:
+    _set_control_layout_edit(false)
+    _save_game()
+
 func _input(event: InputEvent) -> void:
-    if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
-        _try_interact()
+    if event is InputEventKey and event.pressed and not event.echo:
+        if event.keycode == KEY_E:
+            _try_interact()
+        elif event.keycode == KEY_SHIFT:
+            pressed_actions["run"] = true
+    elif event is InputEventKey and not event.pressed and event.keycode == KEY_SHIFT:
+        pressed_actions.erase("run")
+    elif event is InputEventScreenTouch:
+        if control_layout_edit_mode:
+            if event.pressed:
+                var edit_action := _action_button_at(event.position)
+                if edit_action != "":
+                    layout_drag_action = edit_action
+                    layout_touch_index = event.index
+                    get_viewport().set_input_as_handled()
+            elif event.index == layout_touch_index:
+                layout_drag_action = ""
+                layout_touch_index = -1
+                _save_game()
+                get_viewport().set_input_as_handled()
+            return
+
+        if event.pressed:
+            if _is_frontend_visible():
+                return
+            if joystick_touch_index == -1 and event.position.distance_to(joystick_center) <= 86.0:
+                joystick_touch_index = event.index
+                _update_virtual_joystick(event.position)
+                get_viewport().set_input_as_handled()
+                return
+            # Action buttons own their own press/release signals. Do not
+            # capture those same touches as camera gestures.
+            if _action_button_at(event.position) != "":
+                return
+            var visible_size := get_viewport().get_visible_rect().size
+            if camera_touch_index == -1 and event.position.x >= visible_size.x * 0.40 and event.position.y < visible_size.y - 185.0:
+                camera_touch_index = event.index
+        else:
+            if event.index == joystick_touch_index:
+                _reset_virtual_joystick()
+                get_viewport().set_input_as_handled()
+            elif event.index == camera_touch_index:
+                camera_touch_index = -1
+                get_viewport().set_input_as_handled()
     elif event is InputEventScreenDrag:
-        _rotate_camera(event.relative, event.position)
+        if control_layout_edit_mode and event.index == layout_touch_index and layout_drag_action != "":
+            _move_action_button(layout_drag_action, event.position)
+            get_viewport().set_input_as_handled()
+        elif event.index == joystick_touch_index:
+            _update_virtual_joystick(event.position)
+            get_viewport().set_input_as_handled()
+        elif event.index == camera_touch_index:
+            _rotate_camera(event.relative, event.position)
+            get_viewport().set_input_as_handled()
     elif event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
         _rotate_camera(event.relative, event.position)
 
 func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
     if not camera or not camera_pivot:
+        return
+    if network_panel and network_panel.visible and network_panel.get_global_rect().has_point(pointer_position):
+        return
+    if settings_panel and settings_panel.visible and settings_panel.get_global_rect().has_point(pointer_position):
+        return
+    if minimap_panel and minimap_panel.visible and minimap_panel.get_global_rect().has_point(pointer_position):
+        return
+    if minimap_toggle_button and minimap_toggle_button.visible and minimap_toggle_button.get_global_rect().has_point(pointer_position):
+        return
+    if build_panel and build_panel.visible and build_panel.get_global_rect().has_point(pointer_position):
         return
 
     var screen_size := get_viewport().get_visible_rect().size
@@ -426,46 +2124,414 @@ func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
     if pointer_position.x < screen_size.x * 0.40:
         return
 
-    camera_pivot.rotation.y -= relative.x * CAMERA_DRAG_SENSITIVITY
+    camera_pivot.rotation.y -= relative.x * camera_sensitivity
     camera.rotation.x = clamp(
-        camera.rotation.x - relative.y * CAMERA_DRAG_SENSITIVITY,
+        camera.rotation.x - relative.y * camera_sensitivity,
         deg_to_rad(-38.0),
         deg_to_rad(-5.0)
     )
 
 func _process(delta: float) -> void:
-    _update_day_cycle(delta)
-    _update_survival(delta)
+    var frontend_visible := _is_frontend_visible()
+    if not frontend_visible:
+        _update_day_cycle(delta)
+        _update_survival(delta)
+    if cloud_layer:
+        cloud_layer.rotation.y += delta * 0.0009
+    if player and not frontend_visible and not journey_visited_crossing:
+        var crossing_distance := Vector2(player.global_position.x - river_crossing_position.x, player.global_position.z - river_crossing_position.z).length()
+        if crossing_distance <= 9.0:
+            journey_visited_crossing = true
+            _show_status_note("You discovered the river crossing.")
+            _save_game()
+    _update_network(delta)
+    _update_remote_players(delta)
+    _update_build_preview()
+    _update_wildlife(delta)
+    _animate_wildlife_limbs(delta)
+    _update_village_agents(delta)
+    _animate_villager_limbs(delta)
+    _update_adaptive_quality(delta)
+    metrics_refresh_timer += delta
+    if minimap_marker and player:
+        _update_minimap()
+    if metrics_refresh_timer >= 0.75 and metrics_label:
+        metrics_refresh_timer = 0.0
+        var current_fps := Engine.get_frames_per_second()
+        var frame_time_ms := 1000.0 / maxf(1.0, float(current_fps))
+        var current_memory_mb := Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0
+        metrics_label.text = "Live  •  %d FPS  •  %.1f ms/frame  •  %.0f MB process memory  •  cap %d" % [
+            current_fps,
+            frame_time_ms,
+            current_memory_mb,
+            current_fps_target
+        ]
+    save_elapsed += delta
+    if save_elapsed >= 15.0:
+        _save_game()
     if status_note_time > 0.0:
-        status_note_time = max(0.0, status_note_time - delta)
-    if hud_label and player:
+        status_note_time = maxf(0.0, status_note_time - delta)
+    hud_refresh_timer += delta
+    if hud_refresh_timer >= 0.2 and hud_label and player:
+        hud_refresh_timer = 0.0
         var hours := int(world_clock)
         var minutes := int((world_clock - float(hours)) * 60.0)
         var time_text := "%02d:%02d" % [hours, minutes]
         var prompt := _get_interaction_prompt()
         var note := status_note if status_note_time > 0.0 else prompt
-        hud_label.text = "WORLDS  •  PROTOTYPE  |  %s\nFood %d%%   Water %d%%   Rest %d%%\n%s" % [
+        var objective := _get_journey_objective()
+        hud_label.text = "WORLDS  •  %s  |  %s  |  HP %d%%\nFood %d%%   Water %d%%   Rest %d%%\n%s\n%s" % [
             time_text,
+            player_name,
+            roundi(health),
             roundi(hunger),
             roundi(thirst),
             roundi(rest),
-            note
+            note,
+            objective
         ]
+        if health_bar:
+            health_bar.value = health
+        if survival_bars.has("food"):
+            (survival_bars["food"] as ProgressBar).value = hunger
+        if survival_bars.has("water"):
+            (survival_bars["water"] as ProgressBar).value = thirst
+        if survival_bars.has("rest"):
+            (survival_bars["rest"] as ProgressBar).value = rest
+        if survival_bars.has("energy"):
+            (survival_bars["energy"] as ProgressBar).value = stamina
+
+
+func _nearest_interaction_for(position: Vector3) -> Dictionary:
+    var best_distance := INF
+    var result := {"action": "", "index": -1}
+
+    var river_center := sin(position.z * 0.018) * 18.0
+    var river_distance: float = absf(position.x - river_center)
+    if river_distance < 5.5 and absf(position.z) < WORLD_SIZE * 0.5:
+        best_distance = river_distance
+        result["action"] = "drink"
+
+    var well_distance := Vector2(position.x - village_well_position.x, position.z - village_well_position.z).length()
+    if well_distance < 3.4 and well_distance < best_distance:
+        best_distance = well_distance
+        result["action"] = "drink"
+        result["index"] = -1
+
+    for index in range(berry_bushes.size()):
+        var bush: Dictionary = berry_bushes[index]
+        if int(bush["servings"]) <= 0:
+            continue
+        var bush_position: Vector3 = bush["position"]
+        var distance := Vector2(position.x - bush_position.x, position.z - bush_position.z).length()
+        if distance < 3.8 and distance < best_distance:
+            best_distance = distance
+            result["action"] = "forage"
+            result["index"] = index
+
+    for index in range(resource_nodes.size()):
+        var resource: Dictionary = resource_nodes[index]
+        if int(resource["amount"]) <= 0:
+            continue
+        var resource_position: Vector3 = resource["position"]
+        var resource_distance := Vector2(position.x - resource_position.x, position.z - resource_position.z).length()
+        if resource_distance < 3.7 and resource_distance < best_distance:
+            best_distance = resource_distance
+            result["action"] = "gather"
+            result["index"] = index
+
+    if not memory_awakened:
+        var memory_distance := Vector2(position.x - memory_position.x, position.z - memory_position.z).length()
+        if memory_distance < 4.5 and memory_distance < best_distance:
+            best_distance = memory_distance
+            result["action"] = "memory"
+            result["index"] = -1
+
+    for index in range(village_agents.size()):
+        var villager: Dictionary = village_agents[index]
+        var villager_root: Node3D = villager.get("root")
+        if not is_instance_valid(villager_root):
+            continue
+        var villager_distance := Vector2(position.x - villager_root.global_position.x, position.z - villager_root.global_position.z).length()
+        if villager_distance < 3.2 and villager_distance < best_distance:
+            best_distance = villager_distance
+            result["action"] = "talk"
+            result["index"] = index
+
+    for index in range(placed_buildings.size()):
+        var building: Dictionary = placed_buildings[index]
+        if str(building.get("type", "")) != "cabin":
+            continue
+        var cabin_position: Vector3 = building.get("position", Vector3.ZERO)
+        var cabin_distance := Vector2(position.x - cabin_position.x, position.z - cabin_position.z).length()
+        if cabin_distance < 4.8 and cabin_distance < best_distance:
+            best_distance = cabin_distance
+            result["action"] = "home"
+            result["index"] = index
+
+    var camp_distance := Vector2(position.x - camp_position.x, position.z - camp_position.z).length()
+    if camp_distance < 4.5 and camp_distance < best_distance:
+        result["action"] = "sleep"
+        result["index"] = -1
+
+    return result
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_request_interaction() -> void:
+    if not multiplayer.is_server():
+        return
+    var sender := multiplayer.get_remote_sender_id()
+    if not network_remote_players.has(sender):
+        return
+    var remote_avatar: Node3D = network_remote_players[sender]
+    if not is_instance_valid(remote_avatar):
+        return
+
+    var nearby := _nearest_interaction_for(remote_avatar.global_position)
+    var action: String = nearby["action"]
+    print("LAN_SMOKE_HOST_INTERACTION  •  sender %d  •  position %s  •  action %s  •  index %d" % [sender, str(remote_avatar.global_position), action, int(nearby["index"])])
+    match action:
+        "drink":
+            rpc_id(sender, "_rpc_apply_personal_interaction", "drink")
+        "forage":
+            var bush_index := int(nearby["index"])
+            var bush: Dictionary = berry_bushes[bush_index]
+            var remaining := maxi(0, int(bush["servings"]) - 1)
+            bush["servings"] = remaining
+            berry_bushes[bush_index] = bush
+            rpc("_rpc_set_berry_servings", bush_index, remaining)
+            rpc_id(sender, "_rpc_apply_personal_interaction", "forage")
+        "gather":
+            _server_gather_resource(int(nearby["index"]), sender)
+        "talk":
+            rpc_id(sender, "_rpc_apply_villager_dialogue", int(nearby.get("index", -1)))
+        "sleep", "home":
+            world_clock = 7.0
+            rpc("_rpc_set_shared_clock", world_clock)
+            rpc_id(sender, "_rpc_apply_personal_interaction", action)
+        "memory":
+            _apply_world_memory()
+            rpc("_rpc_world_memory_activated")
+        _:
+            rpc_id(sender, "_rpc_apply_personal_interaction", "nothing")
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_apply_villager_dialogue(villager_index: int) -> void:
+    journey_met_villager = true
+    _show_status_note(_villager_dialogue(villager_index))
+
+func _villager_dialogue(villager_index: int) -> String:
+    var lines: Array[String] = [
+        "The river is calm today. Keep your supplies dry before crossing.",
+        "The market opens early. The valley wakes with the first light.",
+        "You can find good timber beyond the western trees.",
+        "Watch the mountain weather. The snow arrives quickly up there.",
+        "The pavilion is a quiet place to rest and watch the water.",
+        "Wild berries grow near the greener slopes. Take only what you need.",
+        "A small camp becomes a home when friends build it together.",
+        "I heard deer moving near the forest edge just before sunrise."
+    ]
+    if villager_index < 0 or villager_index >= village_agents.size():
+        return "Welcome, traveler. Take a moment to explore our village."
+    return lines[posmod(villager_index, lines.size())]
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_apply_personal_interaction(action: String) -> void:
+    match action:
+        "drink":
+            thirst = minf(100.0, thirst + 42.0)
+            health = minf(100.0, health + 3.0)
+            _show_status_note("You drank water from the river.")
+        "forage":
+            hunger = minf(100.0, hunger + 34.0)
+            health = minf(100.0, health + 4.0)
+            _show_status_note("You gathered wild berries.")
+        "sleep":
+            rest = 100.0
+            hunger = maxf(0.0, hunger - 7.0)
+            thirst = maxf(0.0, thirst - 10.0)
+            health = minf(100.0, health + 12.0)
+            _show_status_note("You rested at the campsite.")
+        "home":
+            rest = 100.0
+            hunger = maxf(0.0, hunger - 4.0)
+            thirst = maxf(0.0, thirst - 5.0)
+            health = minf(100.0, health + 12.0)
+            _show_status_note("You slept safely in your cabin.")
+        _:
+            _show_status_note("Nothing nearby to use.")
+
+func _set_resource_amount_local(index: int, amount: int) -> void:
+    if index < 0 or index >= resource_nodes.size():
+        return
+    var resource: Dictionary = resource_nodes[index]
+    var safe_amount := clampi(amount, 0, 10)
+    resource["amount"] = safe_amount
+    resource_nodes[index] = resource
+    var visual: Node3D = resource["visual"]
+    if is_instance_valid(visual):
+        visual.visible = safe_amount > 0
+
+func _server_gather_resource(index: int, requester_id: int) -> void:
+    if index < 0 or index >= resource_nodes.size():
+        return
+    var resource: Dictionary = resource_nodes[index]
+    var actor_position := player.global_position
+    if lan_active and multiplayer.is_server() and requester_id > 1:
+        if not network_remote_players.has(requester_id):
+            return
+        var remote_avatar: Node3D = network_remote_players[requester_id]
+        if not is_instance_valid(remote_avatar):
+            return
+        actor_position = remote_avatar.global_position
+    var resource_position: Vector3 = resource["position"]
+    if Vector2(actor_position.x - resource_position.x, actor_position.z - resource_position.z).length() > 3.7:
+        return
+    var remaining := int(resource["amount"])
+    if remaining <= 0:
+        return
+    var kind: String = resource["kind"]
+    if OS.get_cmdline_user_args().has("--lan-smoke-host"):
+        print("LAN_SMOKE_HOST_GATHER  •  requester %d  •  resource %d  •  kind %s  •  before %d" % [requester_id, index, kind, remaining])
+    if not shared_inventory.has(kind):
+        return
+
+    remaining -= 1
+    _set_resource_amount_local(index, remaining)
+    shared_inventory[kind] = int(shared_inventory[kind]) + 1
+    _update_inventory_ui()
+    _show_status_note("Collected 1 %s. Shared supplies increased." % kind)
+
+    if lan_active and multiplayer.is_server():
+        rpc("_rpc_set_resource_amount", index, remaining)
+        rpc("_rpc_set_shared_inventory", shared_inventory)
+    _save_game()
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_resource_amount(index: int, amount: int) -> void:
+    _set_resource_amount_local(index, amount)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_shared_inventory(inventory: Dictionary) -> void:
+    for key in ["wood", "stone", "fiber"]:
+        shared_inventory[key] = maxi(0, int(inventory.get(key, 0)))
+    _update_inventory_ui()
+    _show_status_note("Shared supplies synchronized.")
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_berry_servings(index: int, servings: int) -> void:
+    if index < 0 or index >= berry_bushes.size():
+        return
+    var bush: Dictionary = berry_bushes[index]
+    bush["servings"] = clampi(servings, 0, 3)
+    berry_bushes[index] = bush
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_shared_clock(new_clock: float) -> void:
+    world_clock = fposmod(new_clock, 24.0)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_world_memory_activated() -> void:
+    _apply_world_memory()
+
+func _broadcast_shared_world_state() -> void:
+    if not lan_active or not multiplayer.is_server():
+        return
+    rpc("_rpc_set_shared_clock", world_clock)
+    for index in range(berry_bushes.size()):
+        var bush: Dictionary = berry_bushes[index]
+        rpc("_rpc_set_berry_servings", index, int(bush["servings"]))
+    rpc("_rpc_set_shared_inventory", shared_inventory)
+    for index in range(resource_nodes.size()):
+        var resource: Dictionary = resource_nodes[index]
+        rpc("_rpc_set_resource_amount", index, int(resource["amount"]))
 
 func _update_survival(delta: float) -> void:
     # Needs decline slowly so exploration stays relaxed rather than punishing.
-    hunger = max(0.0, hunger - delta * 0.012)
-    thirst = max(0.0, thirst - delta * 0.022)
-    rest = max(0.0, rest - delta * 0.016)
+    hunger = maxf(0.0, hunger - delta * 0.012)
+    thirst = maxf(0.0, thirst - delta * 0.022)
+    rest = maxf(0.0, rest - delta * 0.016)
+
+    if hunger <= 0.0 or thirst <= 0.0:
+        health = maxf(0.0, health - delta * 0.18)
+    elif hunger >= 80.0 and thirst >= 80.0 and rest >= 45.0:
+        health = minf(100.0, health + delta * 0.08)
+
+    if health <= 0.0 and player:
+        player.global_position = camp_position + Vector3(0.0, 1.3, 0.0)
+        player.velocity = Vector3.ZERO
+        health = 65.0
+        hunger = maxf(hunger, 55.0)
+        thirst = maxf(thirst, 55.0)
+        rest = maxf(rest, 45.0)
+        _show_status_note("You recovered at the campsite. Take supplies before leaving.")
+        _save_game()
+
+func _objective_distance_text(target_position: Vector3) -> String:
+    if not player:
+        return ""
+    var distance := Vector2(
+        player.global_position.x - target_position.x,
+        player.global_position.z - target_position.z
+    ).length()
+    return "  •  %d m away" % roundi(distance)
+
+
+func _get_journey_objective() -> String:
+    var cabin_owned := false
+    for building in placed_buildings:
+        if str(building.get("type", "")) == "cabin":
+            cabin_owned = true
+            break
+    if not cabin_owned:
+        if int(shared_inventory.get("wood", 0)) < 14:
+            return "JOURNEY  •  Gather %d more wood" % (14 - int(shared_inventory.get("wood", 0)))
+        if int(shared_inventory.get("stone", 0)) < 6:
+            return "JOURNEY  •  Gather %d more stone" % (6 - int(shared_inventory.get("stone", 0)))
+        if int(shared_inventory.get("fiber", 0)) < 6:
+            return "JOURNEY  •  Gather %d more fiber" % (6 - int(shared_inventory.get("fiber", 0)))
+        return "JOURNEY  •  Open BUILD and place your timber cabin"
+    if not journey_visited_crossing:
+        return "JOURNEY  •  Find the river crossing" + _objective_distance_text(river_crossing_position)
+    if not journey_met_villager:
+        var nearest_villager_position := Vector3.ZERO
+        var nearest_villager_distance := INF
+        for villager in village_agents:
+            var villager_root: Node3D = villager.get("root")
+            if not is_instance_valid(villager_root):
+                continue
+            var distance := Vector2(
+                player.global_position.x - villager_root.global_position.x,
+                player.global_position.z - villager_root.global_position.z
+            ).length()
+            if distance < nearest_villager_distance:
+                nearest_villager_distance = distance
+                nearest_villager_position = villager_root.global_position
+        if nearest_villager_distance < INF:
+            return "JOURNEY  •  Talk to a villager" + _objective_distance_text(nearest_villager_position)
+        return "JOURNEY  •  Talk to a villager"
+    if not memory_awakened:
+        return "JOURNEY  •  Find the ancient memory stone" + _objective_distance_text(memory_position)
+    return "JOURNEY  •  Follow the glowing memory trail"
 
 func _get_interaction_prompt() -> String:
     match _nearest_interaction():
         "drink":
-            return "USE / E: Drink from the river"
+            return "USE / E: Drink fresh water"
         "forage":
             return "USE / E: Gather wild berries"
+        "gather":
+            var nearby := _nearest_interaction_for(player.global_position)
+            var resource_index := int(nearby.get("index", -1))
+            if resource_index >= 0 and resource_index < resource_nodes.size():
+                return "USE / E: Collect %s" % str(resource_nodes[resource_index]["kind"])
+            return "USE / E: Gather materials"
         "sleep":
             return "USE / E: Rest at the campsite"
+        "home":
+            return "USE / E: Rest inside your cabin"
+        "talk":
+            return "USE / E: Talk with this villager"
         "memory":
             return "USE / E: Listen to the world's memory"
         _:
@@ -476,51 +2542,22 @@ func _get_interaction_prompt() -> String:
 func _nearest_interaction() -> String:
     if not player:
         return ""
-
-    var best_distance := INF
-    var best_action := ""
-
-    var river_center := sin(player.position.z * 0.035) * 8.0
-    var river_distance: float = absf(player.position.x - river_center)
-    if river_distance < 5.5 and abs(player.position.z) < WORLD_SIZE * 0.5:
-        best_distance = river_distance
-        best_action = "drink"
-
-    for bush in berry_bushes:
-        if int(bush["servings"]) <= 0:
-            continue
-        var bush_position: Vector3 = bush["position"]
-        var distance := Vector2(
-            player.position.x - bush_position.x,
-            player.position.z - bush_position.z
-        ).length()
-        if distance < 3.8 and distance < best_distance:
-            best_distance = distance
-            best_action = "forage"
-
-    if not memory_awakened:
-        var memory_distance := Vector2(
-            player.position.x - memory_position.x,
-            player.position.z - memory_position.z
-        ).length()
-        if memory_distance < 4.5 and memory_distance < best_distance:
-            best_distance = memory_distance
-            best_action = "memory"
-
-    var camp_distance := Vector2(
-        player.position.x - camp_position.x,
-        player.position.z - camp_position.z
-    ).length()
-    if camp_distance < 4.5 and camp_distance < best_distance:
-        best_action = "sleep"
-
-    return best_action
+    var nearby := _nearest_interaction_for(player.global_position)
+    return str(nearby.get("action", ""))
 
 func _try_interact() -> void:
+    if lan_active and not multiplayer.is_server():
+        rpc_id(1, "_rpc_request_interaction")
+        return
+
     match _nearest_interaction():
         "drink":
-            thirst = min(100.0, thirst + 42.0)
+            thirst = minf(100.0, thirst + 42.0)
+            health = minf(100.0, health + 3.0)
             _show_status_note("You drank fresh water.")
+        "gather":
+            var nearest_resource := _nearest_interaction_for(player.global_position)
+            _server_gather_resource(int(nearest_resource.get("index", -1)), 1)
         "forage":
             var nearest_index := -1
             var nearest_distance := INF
@@ -540,18 +2577,34 @@ func _try_interact() -> void:
                 var selected: Dictionary = berry_bushes[nearest_index]
                 selected["servings"] = int(selected["servings"]) - 1
                 berry_bushes[nearest_index] = selected
-                hunger = min(100.0, hunger + 34.0)
+                hunger = minf(100.0, hunger + 34.0)
+                health = minf(100.0, health + 4.0)
                 _show_status_note("You gathered and ate wild berries.")
         "sleep":
             world_clock = 7.0
             rest = 100.0
-            hunger = max(0.0, hunger - 7.0)
-            thirst = max(0.0, thirst - 10.0)
+            hunger = maxf(0.0, hunger - 7.0)
+            thirst = maxf(0.0, thirst - 10.0)
+            health = minf(100.0, health + 12.0)
             _show_status_note("You rested at the campsite until morning.")
+        "home":
+            world_clock = 7.0
+            rest = 100.0
+            hunger = maxf(0.0, hunger - 4.0)
+            thirst = maxf(0.0, thirst - 5.0)
+            health = minf(100.0, health + 12.0)
+            _show_status_note("You slept safely in your cabin. A new morning begins.")
+        "talk":
+            var nearby_villager := _nearest_interaction_for(player.global_position)
+            journey_met_villager = true
+            _show_status_note(_villager_dialogue(int(nearby_villager.get("index", -1))))
         "memory":
             _awaken_world_memory()
         _:
             _show_status_note("Nothing nearby to use.")
+
+    if lan_active and multiplayer.is_server():
+        _broadcast_shared_world_state()
 
 func _show_status_note(message: String) -> void:
     status_note = message
@@ -604,6 +2657,1403 @@ func _create_foraging_bushes() -> void:
             berry_material.roughness = 0.7
             berry.material_override = berry_material
             add_child(berry)
+
+func _get_build_recipe(build_type: String) -> Dictionary:
+    match build_type:
+        "campfire":
+            return {"wood": 3, "stone": 2, "fiber": 0}
+        "storage":
+            return {"wood": 5, "stone": 2, "fiber": 0}
+        "shelter":
+            return {"wood": 12, "stone": 4, "fiber": 6}
+        "cabin":
+            return {"wood": 14, "stone": 6, "fiber": 6}
+        _:
+            return {}
+
+func _request_build(build_type: String) -> void:
+    if not player:
+        return
+    if lan_active and not multiplayer.is_server():
+        rpc_id(1, "_rpc_request_place_building", build_type, build_rotation_offset)
+        _show_status_note("Requesting a place from the host...")
+        return
+    _server_place_building(build_type, player.global_position, player.rotation.y, build_rotation_offset)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_request_place_building(build_type: String, rotation_offset: float) -> void:
+    if not multiplayer.is_server():
+        return
+    var sender := multiplayer.get_remote_sender_id()
+    if not network_remote_players.has(sender):
+        return
+    var avatar: Node3D = network_remote_players[sender]
+    if not is_instance_valid(avatar):
+        return
+    _server_place_building(build_type, avatar.global_position, avatar.rotation.y, rotation_offset)
+
+func _server_place_building(build_type: String, actor_position: Vector3, actor_facing: float, rotation_offset := 0.0) -> void:
+    var recipe := _get_build_recipe(build_type)
+    if recipe.is_empty():
+        _show_status_note("Unknown building plan.")
+        return
+
+    for key in recipe:
+        if int(shared_inventory.get(key, 0)) < int(recipe[key]):
+            _show_status_note("Not enough materials for this structure.")
+            return
+
+    var facing := actor_facing + clampf(rotation_offset, -TAU, TAU)
+    var forward := Vector3(sin(facing), 0.0, -cos(facing))
+    var placement := actor_position + forward * 4.0
+    placement.x = clampf(placement.x, -WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+    placement.z = clampf(placement.z, -WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+    var river_center := sin(placement.z * 0.018) * 18.0
+    if absf(placement.x - river_center) < 9.0:
+        _show_status_note("Choose a dry place away from the river.")
+        return
+    if Vector2(placement.x, placement.z).distance_to(Vector2(camp_position.x, camp_position.z)) < 3.2:
+        _show_status_note("Move a little farther from the starting campsite.")
+        return
+    var new_clearance := _structure_clearance(build_type)
+    for building in placed_buildings:
+        var other: Vector3 = building["position"]
+        var existing_clearance := _structure_clearance(str(building.get("type", "")))
+        if Vector2(placement.x, placement.z).distance_to(Vector2(other.x, other.z)) < maxf(new_clearance, existing_clearance):
+            _show_status_note("There is already a structure too close.")
+            return
+
+    placement.y = _height_at(placement.x, placement.z)
+    for key in recipe:
+        shared_inventory[key] = int(shared_inventory.get(key, 0)) - int(recipe[key])
+
+    _spawn_building_visual(build_type, placement, facing, true)
+    _update_inventory_ui()
+    _show_status_note("Structure placed. The shared world has changed.")
+    if lan_active and multiplayer.is_server():
+        rpc("_rpc_set_shared_inventory", shared_inventory)
+        rpc("_rpc_spawn_building", build_type, placement, facing)
+    _save_game()
+
+func _structure_clearance(build_type: String) -> float:
+    return 9.0 if build_type == "cabin" else 3.4
+
+func _spawn_building_visual(build_type: String, position: Vector3, facing: float, record: bool) -> void:
+    var root := Node3D.new()
+    root.name = "Built_%s_%02d" % [build_type, placed_buildings.size()]
+    root.position = position
+    root.rotation.y = facing
+    add_child(root)
+
+    match build_type:
+        "campfire":
+            for i in range(3):
+                var log := MeshInstance3D.new()
+                var log_mesh := CylinderMesh.new()
+                log_mesh.top_radius = 0.13
+                log_mesh.bottom_radius = 0.13
+                log_mesh.height = 1.2
+                log.mesh = log_mesh
+                log.position = Vector3(cos(float(i) * TAU / 3.0) * 0.22, 0.14, sin(float(i) * TAU / 3.0) * 0.22)
+                log.rotation.z = PI * 0.5
+                log.material_override = _build_material(Color(0.30, 0.18, 0.10))
+                root.add_child(log)
+            var flame := MeshInstance3D.new()
+            var flame_mesh := SphereMesh.new()
+            flame_mesh.radius = 0.30
+            flame_mesh.height = 0.70
+            flame.mesh = flame_mesh
+            flame.position.y = 0.42
+            flame.material_override = _build_material(Color(1.0, 0.22, 0.035), true)
+            root.add_child(flame)
+            var light := OmniLight3D.new()
+            light.position.y = 0.85
+            light.light_color = Color(1.0, 0.38, 0.12)
+            light.light_energy = 0.7
+            light.omni_range = 6.0
+            root.add_child(light)
+        "storage":
+            var box := MeshInstance3D.new()
+            var box_mesh := BoxMesh.new()
+            box_mesh.size = Vector3(1.35, 0.92, 1.05)
+            box.mesh = box_mesh
+            box.position.y = 0.48
+            box.material_override = _build_material(Color(0.38, 0.23, 0.12))
+            root.add_child(box)
+            var lid := MeshInstance3D.new()
+            var lid_mesh := BoxMesh.new()
+            lid_mesh.size = Vector3(1.42, 0.16, 1.12)
+            lid.mesh = lid_mesh
+            lid.position.y = 1.02
+            lid.material_override = _build_material(Color(0.25, 0.15, 0.09))
+            root.add_child(lid)
+            _add_building_collision(root, Vector3(1.4, 1.0, 1.1), Vector3(0.0, 0.5, 0.0))
+        "shelter":
+            var wood_material := _build_material(Color(0.34, 0.22, 0.13))
+            for x in [-1.7, 1.7]:
+                for z in [-1.45, 1.45]:
+                    var post := MeshInstance3D.new()
+                    var post_mesh := CylinderMesh.new()
+                    post_mesh.top_radius = 0.13
+                    post_mesh.bottom_radius = 0.17
+                    post_mesh.height = 2.6
+                    post.mesh = post_mesh
+                    post.position = Vector3(x, 1.3, z)
+                    post.material_override = wood_material
+                    root.add_child(post)
+            var roof := MeshInstance3D.new()
+            var roof_mesh := BoxMesh.new()
+            roof_mesh.size = Vector3(4.0, 0.22, 3.7)
+            roof.mesh = roof_mesh
+            roof.position.y = 2.68
+            roof.material_override = _build_material(Color(0.25, 0.18, 0.12))
+            root.add_child(roof)
+            _add_building_collision(root, Vector3(3.6, 0.2, 3.1), Vector3(0.0, 0.1, 0.0))
+        "cabin":
+            var cabin_wall := _build_material(Color(0.55, 0.39, 0.25))
+            var cabin_trim := _build_material(Color(0.25, 0.16, 0.10))
+            var cabin_roof := _build_material(Color(0.20, 0.17, 0.15))
+            var cabin_glass := _build_material(Color(0.24, 0.48, 0.54))
+            cabin_glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+            cabin_glass.albedo_color = Color(0.24, 0.48, 0.54, 0.78)
+            _village_box(root, "Cabin_Floor", Vector3(6.2, 0.16, 6.2), Vector3(0.0, 0.08, 0.0), cabin_trim)
+            _village_box(root, "Cabin_Back_Wall", Vector3(6.0, 4.0, 0.28), Vector3(0.0, 2.0, 2.88), cabin_wall)
+            _village_box(root, "Cabin_Left_Wall", Vector3(0.28, 4.0, 6.0), Vector3(-2.88, 2.0, 0.0), cabin_wall)
+            _village_box(root, "Cabin_Right_Wall", Vector3(0.28, 4.0, 6.0), Vector3(2.88, 2.0, 0.0), cabin_wall)
+            _village_box(root, "Cabin_Front_Left", Vector3(2.1, 4.0, 0.28), Vector3(-1.95, 2.0, -2.88), cabin_wall)
+            _village_box(root, "Cabin_Front_Right", Vector3(2.1, 4.0, 0.28), Vector3(1.95, 2.0, -2.88), cabin_wall)
+            _village_box(root, "Cabin_Door_Lintel", Vector3(1.8, 0.48, 0.28), Vector3(0.0, 3.76, -2.88), cabin_trim)
+            for side in [-1.0, 1.0]:
+                _village_box(root, "Cabin_Door_Frame", Vector3(0.18, 3.45, 0.22), Vector3(side * 0.96, 1.72, -3.03), cabin_trim)
+            var open_door := _village_box(root, "Cabin_Open_Door", Vector3(1.65, 3.15, 0.12), Vector3(-1.82, 1.58, -2.98), cabin_trim)
+            open_door.rotation.y = -0.42
+            for side in [-1.0, 1.0]:
+                var window_z: float = float(side) * 1.42
+                _village_box(root, "Cabin_Window_Glass", Vector3(0.08, 1.22, 1.35), Vector3(-3.04, 2.45, window_z), cabin_glass)
+                _village_box(root, "Cabin_Window_Glass", Vector3(0.08, 1.22, 1.35), Vector3(3.04, 2.45, window_z), cabin_glass)
+                _village_box(root, "Cabin_Window_Trim", Vector3(0.16, 1.42, 1.55), Vector3(-3.08, 2.45, window_z), cabin_trim)
+                _village_box(root, "Cabin_Window_Trim", Vector3(0.16, 1.42, 1.55), Vector3(3.08, 2.45, window_z), cabin_trim)
+            var left_roof := _village_box(root, "Cabin_Roof_Left", Vector3(3.65, 0.24, 6.6), Vector3(-1.72, 4.22, 0.0), cabin_roof)
+            left_roof.rotation.z = 0.50
+            var right_roof := _village_box(root, "Cabin_Roof_Right", Vector3(3.65, 0.24, 6.6), Vector3(1.72, 4.22, 0.0), cabin_roof)
+            right_roof.rotation.z = -0.50
+            _village_box(root, "Cabin_Ridge_Beam", Vector3(0.22, 0.26, 6.72), Vector3(0.0, 5.13, 0.0), cabin_trim)
+            _village_box(root, "Cabin_Chimney", Vector3(0.72, 1.75, 0.72), Vector3(2.05, 5.0, 1.65), cabin_wall)
+            _village_box(root, "Cabin_Bed_Frame", Vector3(2.0, 0.34, 1.35), Vector3(1.45, 0.28, 1.05), cabin_trim)
+            _village_box(root, "Cabin_Bedroll", Vector3(1.82, 0.18, 1.18), Vector3(1.45, 0.53, 1.05), _build_material(Color(0.65, 0.48, 0.31)))
+            _village_box(root, "Cabin_Rug", Vector3(2.35, 0.05, 1.75), Vector3(-1.20, 0.19, -0.30), _build_material(Color(0.43, 0.23, 0.17)))
+            _add_building_collision(root, Vector3(6.0, 4.0, 0.28), Vector3(0.0, 2.0, 2.88))
+            _add_building_collision(root, Vector3(0.28, 4.0, 6.0), Vector3(-2.88, 2.0, 0.0))
+            _add_building_collision(root, Vector3(0.28, 4.0, 6.0), Vector3(2.88, 2.0, 0.0))
+            _add_building_collision(root, Vector3(2.1, 4.0, 0.28), Vector3(-1.95, 2.0, -2.88))
+            _add_building_collision(root, Vector3(2.1, 4.0, 0.28), Vector3(1.95, 2.0, -2.88))
+            _add_building_collision(root, Vector3(1.8, 0.48, 0.28), Vector3(0.0, 3.76, -2.88))
+
+    if record:
+        placed_buildings.append({
+            "type": build_type,
+            "position": position,
+            "rotation": facing
+        })
+
+func _build_material(color: Color, emissive := false) -> StandardMaterial3D:
+    var material := StandardMaterial3D.new()
+    material.albedo_color = color
+    material.roughness = 0.92
+    if emissive:
+        material.emission_enabled = true
+        material.emission = color
+        material.emission_energy_multiplier = 1.4
+    return material
+
+func _add_building_collision(root: Node3D, size: Vector3, offset: Vector3) -> void:
+    var body := StaticBody3D.new()
+    body.position = offset
+    var collision := CollisionShape3D.new()
+    var shape := BoxShape3D.new()
+    shape.size = size
+    collision.shape = shape
+    body.add_child(collision)
+    root.add_child(body)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_spawn_building(build_type: String, position: Vector3, facing: float) -> void:
+    _spawn_building_visual(build_type, position, facing, true)
+
+func _create_resource_nodes() -> void:
+    var resource_layout := [
+        {"kind": "wood", "position": Vector2(31.0, -11.0), "amount": 4},
+        {"kind": "wood", "position": Vector2(-54.0, 32.0), "amount": 4},
+        {"kind": "wood", "position": Vector2(65.0, 46.0), "amount": 4},
+        {"kind": "wood", "position": Vector2(-82.0, -44.0), "amount": 4},
+        {"kind": "wood", "position": Vector2(102.0, -72.0), "amount": 4},
+        {"kind": "stone", "position": Vector2(40.0, -11.0), "amount": 4},
+        {"kind": "stone", "position": Vector2(78.0, 5.0), "amount": 4},
+        {"kind": "stone", "position": Vector2(-88.0, 16.0), "amount": 4},
+        {"kind": "stone", "position": Vector2(5.0, 93.0), "amount": 4},
+        {"kind": "stone", "position": Vector2(117.0, 111.0), "amount": 4},
+        {"kind": "fiber", "position": Vector2(16.0, 45.0), "amount": 5},
+        {"kind": "fiber", "position": Vector2(-28.0, 82.0), "amount": 5},
+        {"kind": "fiber", "position": Vector2(75.0, -93.0), "amount": 5},
+        {"kind": "fiber", "position": Vector2(-98.0, -8.0), "amount": 5},
+        {"kind": "fiber", "position": Vector2(111.0, 43.0), "amount": 5}
+    ]
+
+    var resource_rng := RandomNumberGenerator.new()
+    resource_rng.seed = 20261112
+    for generated_index in range(48):
+        var resource_x := resource_rng.randf_range(-WORLD_SIZE * 0.45, WORLD_SIZE * 0.45)
+        var resource_z := resource_rng.randf_range(-WORLD_SIZE * 0.45, WORLD_SIZE * 0.45)
+        var river_center := sin(resource_z * 0.018) * 18.0
+        if absf(resource_x - river_center) < 13.0:
+            continue
+        if Vector2(resource_x, resource_z).length() < 24.0:
+            continue
+        var resource_kind := "fiber"
+        if resource_x > 125.0:
+            resource_kind = "stone" if generated_index % 2 == 0 else "fiber"
+        elif resource_z < -125.0:
+            resource_kind = "wood" if generated_index % 2 == 0 else "stone"
+        else:
+            match generated_index % 3:
+                0:
+                    resource_kind = "wood"
+                1:
+                    resource_kind = "stone"
+                _:
+                    resource_kind = "fiber"
+        resource_layout.append({
+            "kind": resource_kind,
+            "position": Vector2(resource_x, resource_z),
+            "amount": 3 if resource_kind == "wood" else 4
+        })
+
+    for entry in resource_layout:
+        var kind: String = entry["kind"]
+        var point: Vector2 = entry["position"]
+        var ground_position := Vector3(point.x, _height_at(point.x, point.y), point.y)
+        var visual := Node3D.new()
+        visual.name = "Resource_%s_%02d" % [kind, resource_nodes.size()]
+        visual.position = ground_position
+        add_child(visual)
+
+        if kind == "wood":
+            var bark := StandardMaterial3D.new()
+            bark.albedo_color = Color(0.31, 0.19, 0.11)
+            bark.roughness = 1.0
+            for piece in range(3):
+                var log := MeshInstance3D.new()
+                var log_mesh := CylinderMesh.new()
+                log_mesh.top_radius = 0.17
+                log_mesh.bottom_radius = 0.17
+                log_mesh.height = 1.45
+                log.mesh = log_mesh
+                log.position = Vector3(0.0, 0.20 + float(piece) * 0.22, (float(piece) - 1.0) * 0.24)
+                log.rotation.z = PI * 0.5
+                log.material_override = bark
+                visual.add_child(log)
+        elif kind == "stone":
+            var stone_material := StandardMaterial3D.new()
+            stone_material.albedo_color = Color(0.40, 0.43, 0.42)
+            stone_material.roughness = 0.98
+            for piece in range(4):
+                var rock := MeshInstance3D.new()
+                var rock_mesh := SphereMesh.new()
+                rock_mesh.radius = 0.48
+                rock_mesh.height = 0.78
+                rock_mesh.radial_segments = 8
+                rock_mesh.rings = 4
+                rock.mesh = rock_mesh
+                rock.position = Vector3(cos(float(piece) * TAU / 4.0) * 0.36, 0.24, sin(float(piece) * TAU / 4.0) * 0.36)
+                rock.scale = Vector3(1.0 + float(piece % 2) * 0.25, 0.78, 0.9)
+                rock.material_override = stone_material
+                visual.add_child(rock)
+        else:
+            var fiber_material := StandardMaterial3D.new()
+            fiber_material.albedo_color = Color(0.19, 0.40, 0.15)
+            fiber_material.roughness = 1.0
+            for piece in range(5):
+                var stem := MeshInstance3D.new()
+                var stem_mesh := CapsuleMesh.new()
+                stem_mesh.radius = 0.10
+                stem_mesh.height = 0.85
+                stem.mesh = stem_mesh
+                stem.position = Vector3(cos(float(piece) * TAU / 5.0) * 0.30, 0.48, sin(float(piece) * TAU / 5.0) * 0.30)
+                stem.rotation.z = -0.28 if piece % 2 == 0 else 0.28
+                stem.material_override = fiber_material
+                visual.add_child(stem)
+
+        resource_nodes.append({
+            "kind": kind,
+            "position": ground_position,
+            "amount": int(entry["amount"]),
+            "visual": visual
+        })
+
+func _create_build_panel(layer: CanvasLayer) -> void:
+    var screen_size := get_viewport().get_visible_rect().size
+    build_panel = PanelContainer.new()
+    build_panel.theme = game_ui_theme
+    build_panel.name = "CraftAndBuildPanel"
+    build_panel.position = Vector2(screen_size.x * 0.32, screen_size.y * 0.24)
+    build_panel.custom_minimum_size = Vector2(420.0, 0.0)
+    build_panel.visible = false
+    layer.add_child(build_panel)
+
+    var column := VBoxContainer.new()
+    column.add_theme_constant_override("separation", 8)
+    build_panel.add_child(column)
+
+    var title := Label.new()
+    title.text = "التصنيع والبناء • الموارد المشتركة"
+    title.add_theme_font_size_override("font_size", 18)
+    column.add_child(title)
+
+    inventory_label = Label.new()
+    inventory_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(inventory_label)
+
+    var hint := Label.new()
+    hint.text = "اجمع المواد بزر التفاعل ثم ضع البناء أمامك."
+    hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(hint)
+
+    var rotate_row := HBoxContainer.new()
+    var rotate_left := Button.new()
+    rotate_left.text = "تدوير -15°"
+    rotate_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    rotate_left.pressed.connect(_rotate_build_preview.bind(-15.0))
+    rotate_row.add_child(rotate_left)
+    var rotate_right := Button.new()
+    rotate_right.text = "تدوير +15°"
+    rotate_right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    rotate_right.pressed.connect(_rotate_build_preview.bind(15.0))
+    rotate_row.add_child(rotate_right)
+    column.add_child(rotate_row)
+
+    var fire_button := Button.new()
+    fire_button.text = "موقد نار • 3 خشب + 2 حجر"
+    fire_button.custom_minimum_size.y = 46.0
+    fire_button.pressed.connect(_request_build.bind("campfire"))
+    column.add_child(fire_button)
+    build_recipe_buttons["campfire"] = fire_button
+
+    var crate_button := Button.new()
+    crate_button.text = "صندوق تخزين • 5 خشب + 2 حجر"
+    crate_button.custom_minimum_size.y = 46.0
+    crate_button.pressed.connect(_request_build.bind("storage"))
+    column.add_child(crate_button)
+    build_recipe_buttons["storage"] = crate_button
+
+    var shelter_button := Button.new()
+    shelter_button.text = "مأوى خشبي • 12 خشب + 6 ألياف + 4 حجر"
+    shelter_button.custom_minimum_size.y = 46.0
+    shelter_button.pressed.connect(_request_build.bind("shelter"))
+    column.add_child(shelter_button)
+    build_recipe_buttons["shelter"] = shelter_button
+
+    var cabin_button := Button.new()
+    cabin_button.text = "كوخ خشبي • 14 خشب + 6 حجر + 6 ألياف"
+    cabin_button.custom_minimum_size.y = 48.0
+    cabin_button.pressed.connect(_request_build.bind("cabin"))
+    column.add_child(cabin_button)
+    build_recipe_buttons["cabin"] = cabin_button
+
+    var close_button := Button.new()
+    close_button.text = "إغلاق"
+    close_button.pressed.connect(_toggle_build_panel.bind(false))
+    column.add_child(close_button)
+
+    _update_inventory_ui()
+    _create_build_preview()
+
+func _create_build_preview() -> void:
+    var preview_mesh := CylinderMesh.new()
+    preview_mesh.top_radius = 1.25
+    preview_mesh.bottom_radius = 1.25
+    preview_mesh.height = 0.035
+    build_preview = MeshInstance3D.new()
+    build_preview.name = "BuildPlacementPreview"
+    build_preview.mesh = preview_mesh
+    build_preview_material = StandardMaterial3D.new()
+    build_preview_material.albedo_color = Color(0.28, 0.88, 0.63, 0.32)
+    build_preview_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    build_preview_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    build_preview_material.no_depth_test = true
+    build_preview.material_override = build_preview_material
+    build_preview.visible = false
+    add_child(build_preview)
+
+func _rotate_build_preview(degrees: float) -> void:
+    build_rotation_offset = fposmod(build_rotation_offset + deg_to_rad(degrees), TAU)
+    _show_status_note("Build rotation: %d°" % roundi(rad_to_deg(build_rotation_offset)))
+
+func _update_build_preview() -> void:
+    if not build_preview or not player or not build_panel or not build_panel.visible:
+        if build_preview:
+            build_preview.visible = false
+        return
+    var facing := player.rotation.y + build_rotation_offset
+    var forward := Vector3(sin(facing), 0.0, -cos(facing))
+    var target := player.global_position + forward * 4.0
+    target.x = clampf(target.x, -WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+    target.z = clampf(target.z, -WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+    target.y = _height_at(target.x, target.z) + 0.035
+    build_preview.global_position = target
+    build_preview.rotation.y = facing
+    var river_center := sin(target.z * 0.018) * 18.0
+    var blocked := absf(target.x - river_center) < 9.0
+    blocked = blocked or Vector2(target.x, target.z).distance_to(Vector2(camp_position.x, camp_position.z)) < 3.2
+    blocked = blocked or absf(target.x) > WORLD_SIZE * 0.47 or absf(target.z) > WORLD_SIZE * 0.47
+    for building in placed_buildings:
+        var other: Vector3 = building["position"]
+        if Vector2(target.x, target.z).distance_to(Vector2(other.x, other.z)) < 3.4:
+            blocked = true
+            break
+    build_preview_material.albedo_color = Color(0.92, 0.25, 0.20, 0.36) if blocked else Color(0.28, 0.88, 0.63, 0.32)
+    build_preview.visible = true
+
+func _toggle_build_panel(visible_state: bool) -> void:
+    if build_panel:
+        build_panel.visible = visible_state
+        if visible_state:
+            _update_inventory_ui()
+
+func _update_inventory_ui() -> void:
+    if inventory_label:
+        inventory_label.text = "WOOD  %d     STONE  %d     FIBER  %d" % [
+            int(shared_inventory.get("wood", 0)),
+            int(shared_inventory.get("stone", 0)),
+            int(shared_inventory.get("fiber", 0))
+        ]
+    for build_type in build_recipe_buttons:
+        var recipe := _get_build_recipe(str(build_type))
+        var can_afford := true
+        for material in recipe:
+            if int(shared_inventory.get(material, 0)) < int(recipe[material]):
+                can_afford = false
+                break
+        var recipe_button: Button = build_recipe_buttons[build_type]
+        recipe_button.disabled = not can_afford
+
+func _create_wildlife() -> void:
+    wildlife_rng.seed = 20261110
+    for index in range(10):
+        var x := wildlife_rng.randf_range(-115.0, 115.0)
+        var z := wildlife_rng.randf_range(-135.0, 135.0)
+        if absf(x - sin(z * 0.018) * 18.0) < 15.0:
+            x += 24.0
+        var root := Node3D.new()
+        root.name = "WildDeer_%02d" % index
+        root.position = Vector3(x, _height_at(x, z), z)
+        add_child(root)
+
+        var coat := StandardMaterial3D.new()
+        coat.albedo_color = Color(0.34, 0.20, 0.12).lerp(Color(0.50, 0.32, 0.18), wildlife_rng.randf() * 0.55)
+        coat.roughness = 0.98
+        var dark_coat := StandardMaterial3D.new()
+        dark_coat.albedo_color = Color(0.22, 0.13, 0.08)
+        dark_coat.roughness = 1.0
+        var muzzle_material := StandardMaterial3D.new()
+        muzzle_material.albedo_color = Color(0.72, 0.57, 0.42)
+        muzzle_material.roughness = 0.95
+        var antler_material := StandardMaterial3D.new()
+        antler_material.albedo_color = Color(0.68, 0.57, 0.39)
+        antler_material.roughness = 0.94
+
+        var body := MeshInstance3D.new()
+        var body_mesh := CapsuleMesh.new()
+        body_mesh.radius = 0.39
+        body_mesh.height = 1.45
+        body.mesh = body_mesh
+        body.position = Vector3(0.0, 1.12, 0.0)
+        body.rotation.x = PI * 0.5
+        body.material_override = coat
+        root.add_child(body)
+
+        var neck := MeshInstance3D.new()
+        var neck_mesh := CapsuleMesh.new()
+        neck_mesh.radius = 0.17
+        neck_mesh.height = 0.67
+        neck.mesh = neck_mesh
+        neck.position = Vector3(0.0, 1.55, -0.40)
+        neck.rotation.x = -0.38
+        neck.material_override = coat
+        root.add_child(neck)
+
+        var head := MeshInstance3D.new()
+        var head_mesh := SphereMesh.new()
+        head_mesh.radius = 0.23
+        head_mesh.height = 0.42
+        head.mesh = head_mesh
+        head.position = Vector3(0.0, 1.91, -0.66)
+        head.material_override = coat
+        root.add_child(head)
+
+        var muzzle := MeshInstance3D.new()
+        var muzzle_mesh := SphereMesh.new()
+        muzzle_mesh.radius = 0.12
+        muzzle_mesh.height = 0.18
+        muzzle.mesh = muzzle_mesh
+        muzzle.position = Vector3(0.0, 1.80, -0.86)
+        muzzle.material_override = muzzle_material
+        root.add_child(muzzle)
+
+        for side in [-1.0, 1.0]:
+            var ear := MeshInstance3D.new()
+            var ear_mesh := CapsuleMesh.new()
+            ear_mesh.radius = 0.055
+            ear_mesh.height = 0.34
+            ear.mesh = ear_mesh
+            ear.position = Vector3(side * 0.19, 2.08, -0.57)
+            ear.rotation.z = side * 0.48
+            ear.material_override = dark_coat
+            root.add_child(ear)
+
+            var antler_stem := MeshInstance3D.new()
+            var stem_mesh := CylinderMesh.new()
+            stem_mesh.top_radius = 0.012
+            stem_mesh.bottom_radius = 0.035
+            stem_mesh.height = 0.48
+            antler_stem.mesh = stem_mesh
+            antler_stem.position = Vector3(side * 0.13, 2.18, -0.55)
+            antler_stem.rotation.z = -side * 0.18
+            antler_stem.material_override = antler_material
+            root.add_child(antler_stem)
+
+            var antler_branch := MeshInstance3D.new()
+            var branch_mesh := CylinderMesh.new()
+            branch_mesh.top_radius = 0.008
+            branch_mesh.bottom_radius = 0.022
+            branch_mesh.height = 0.28
+            antler_branch.mesh = branch_mesh
+            antler_branch.position = Vector3(side * 0.22, 2.35, -0.55)
+            antler_branch.rotation.z = -side * 0.95
+            antler_branch.material_override = antler_material
+            root.add_child(antler_branch)
+
+        var animal_legs: Array[MeshInstance3D] = []
+        for leg_x in [-0.23, 0.23]:
+            for leg_z in [-0.43, 0.39]:
+                var leg := MeshInstance3D.new()
+                var leg_mesh := CylinderMesh.new()
+                leg_mesh.top_radius = 0.055
+                leg_mesh.bottom_radius = 0.075
+                leg_mesh.height = 0.72
+                leg.mesh = leg_mesh
+                leg.position = Vector3(leg_x, 0.43, leg_z)
+                leg.material_override = dark_coat
+                root.add_child(leg)
+                animal_legs.append(leg)
+
+        var tail := MeshInstance3D.new()
+        var tail_mesh := SphereMesh.new()
+        tail_mesh.radius = 0.13
+        tail_mesh.height = 0.23
+        tail.mesh = tail_mesh
+        tail.position = Vector3(0.0, 1.24, 0.55)
+        tail.material_override = muzzle_material
+        root.add_child(tail)
+
+        wildlife_agents.append({
+            "root": root,
+            "target": Vector3(x, _height_at(x, z), z),
+            "timer": wildlife_rng.randf_range(1.0, 4.0),
+            "speed": wildlife_rng.randf_range(0.9, 1.35),
+            "legs": animal_legs,
+            "phase": wildlife_rng.randf_range(0.0, TAU),
+            "walking": false
+        })
+    _create_small_wildlife("Rabbit", 8, Color(0.55, 0.45, 0.35), 0.55, 1.35)
+    _create_small_wildlife("Fox", 5, Color(0.65, 0.27, 0.10), 0.82, 1.75)
+    _create_small_wildlife("Boar", 4, Color(0.25, 0.19, 0.15), 0.95, 1.05)
+
+func _create_small_wildlife(species: String, count: int, coat_color: Color, size_scale: float, move_speed: float) -> void:
+    for index in range(count):
+        var x := wildlife_rng.randf_range(-112.0, 112.0)
+        var z := wildlife_rng.randf_range(-130.0, 130.0)
+        if absf(x - sin(z * 0.018) * 18.0) < 16.0:
+            x += 25.0 if x < 0.0 else -25.0
+        var root := Node3D.new()
+        root.name = "%s_%02d" % [species, index + 1]
+        root.position = Vector3(x, _height_at(x, z), z)
+        add_child(root)
+        var coat := StandardMaterial3D.new()
+        coat.albedo_color = coat_color.lerp(Color(0.75, 0.62, 0.45), wildlife_rng.randf() * 0.16)
+        coat.roughness = 0.98
+        var dark := StandardMaterial3D.new()
+        dark.albedo_color = coat_color.darkened(0.35)
+        dark.roughness = 1.0
+        var body := MeshInstance3D.new()
+        var body_mesh := SphereMesh.new()
+        body_mesh.radius = 0.52 * size_scale
+        body_mesh.height = 0.75 * size_scale
+        body.mesh = body_mesh
+        body.position.y = 0.55 * size_scale
+        body.scale = Vector3(1.0, 0.78, 1.38)
+        body.material_override = coat
+        root.add_child(body)
+        var head := MeshInstance3D.new()
+        var head_mesh := SphereMesh.new()
+        head_mesh.radius = 0.27 * size_scale
+        head_mesh.height = 0.42 * size_scale
+        head.mesh = head_mesh
+        head.position = Vector3(0.0, 0.72 * size_scale, -0.48 * size_scale)
+        head.material_override = coat
+        root.add_child(head)
+        for side in [-1.0, 1.0]:
+            var ear := MeshInstance3D.new()
+            var ear_mesh := CapsuleMesh.new()
+            ear_mesh.radius = (0.055 if species == "Rabbit" else 0.075) * size_scale
+            ear_mesh.height = (0.48 if species == "Rabbit" else 0.22) * size_scale
+            ear.mesh = ear_mesh
+            ear.position = Vector3(side * 0.16 * size_scale, 1.03 * size_scale, -0.48 * size_scale)
+            ear.rotation.z = side * 0.16
+            ear.material_override = dark
+            root.add_child(ear)
+        var animal_legs: Array[MeshInstance3D] = []
+        for leg_x in [-0.25, 0.25]:
+            for leg_z in [-0.36, 0.34]:
+                var leg := MeshInstance3D.new()
+                var leg_mesh := CylinderMesh.new()
+                leg_mesh.top_radius = 0.045 * size_scale
+                leg_mesh.bottom_radius = 0.065 * size_scale
+                leg_mesh.height = 0.38 * size_scale
+                leg.mesh = leg_mesh
+                leg.position = Vector3(leg_x * size_scale, 0.20 * size_scale, leg_z * size_scale)
+                leg.material_override = dark
+                root.add_child(leg)
+                animal_legs.append(leg)
+        var tail := MeshInstance3D.new()
+        var tail_mesh := SphereMesh.new()
+        tail_mesh.radius = (0.16 if species == "Fox" else 0.10) * size_scale
+        tail_mesh.height = 0.28 * size_scale
+        tail.mesh = tail_mesh
+        tail.position = Vector3(0.0, 0.65 * size_scale, 0.58 * size_scale)
+        tail.material_override = dark if species != "Fox" else coat
+        root.add_child(tail)
+        wildlife_agents.append({
+            "root": root,
+            "target": root.position,
+            "timer": wildlife_rng.randf_range(1.0, 4.0),
+            "speed": move_speed * wildlife_rng.randf_range(0.8, 1.2),
+            "legs": animal_legs,
+            "phase": wildlife_rng.randf_range(0.0, TAU),
+            "walking": false
+        })
+
+func _village_box(parent: Node3D, node_name: String, size: Vector3, position: Vector3, material: Material) -> MeshInstance3D:
+    var node := MeshInstance3D.new()
+    node.name = node_name
+    var mesh := BoxMesh.new()
+    mesh.size = size
+    node.mesh = mesh
+    node.position = position
+    node.material_override = material
+    parent.add_child(node)
+    return node
+
+func _create_village() -> void:
+    # A small settlement on the west bank, with a clear pedestrian lane and varied homes.
+    var village_center := Vector3(-82.0, 0.0, 76.0)
+    var ground := _height_at(village_center.x, village_center.z)
+    var path_material := StandardMaterial3D.new()
+    path_material.albedo_color = Color(0.42, 0.35, 0.24)
+    path_material.roughness = 1.0
+    var wall_materials: Array[StandardMaterial3D] = []
+    for tint in [Color(0.68, 0.53, 0.37), Color(0.58, 0.43, 0.31), Color(0.72, 0.65, 0.48)]:
+        var material := StandardMaterial3D.new()
+        material.albedo_color = tint
+        material.roughness = 0.94
+        wall_materials.append(material)
+    var roof_material := StandardMaterial3D.new()
+    roof_material.albedo_color = Color(0.24, 0.19, 0.16)
+    roof_material.roughness = 0.9
+    var wood_material := StandardMaterial3D.new()
+    wood_material.albedo_color = Color(0.25, 0.16, 0.10)
+    wood_material.roughness = 0.98
+    var glass_material := StandardMaterial3D.new()
+    glass_material.albedo_color = Color(0.24, 0.43, 0.48, 0.78)
+    glass_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    glass_material.roughness = 0.22
+
+    var road := _village_box(self, "Village_Dirt_Lane", Vector3(7.0, 0.12, 58.0), Vector3(village_center.x, ground + 0.04, village_center.z), path_material)
+    road.rotation.y = 0.08
+    var house_offsets := [
+        Vector3(-13.0, 0.0, -15.0), Vector3(12.0, 0.0, -12.0),
+        Vector3(-15.0, 0.0, 7.0), Vector3(13.0, 0.0, 10.0),
+        Vector3(-2.0, 0.0, 25.0)
+    ]
+    for index in range(house_offsets.size()):
+        var offset: Vector3 = house_offsets[index]
+        var x := village_center.x + offset.x
+        var z := village_center.z + offset.z
+        var base_y := _height_at(x, z)
+        var house := Node3D.new()
+        house.name = "Village_Home_%02d" % (index + 1)
+        house.position = Vector3(x, base_y, z)
+        add_child(house)
+        var wall := _village_box(house, "Plastered_Walls", Vector3(8.0, 4.1, 7.0), Vector3(0.0, 2.05, 0.0), wall_materials[index % wall_materials.size()])
+        var roof_left := _village_box(house, "Roof_Left", Vector3(4.7, 0.28, 7.8), Vector3(-2.0, 4.25, 0.0), roof_material)
+        roof_left.rotation.z = -0.48
+        var roof_right := _village_box(house, "Roof_Right", Vector3(4.7, 0.28, 7.8), Vector3(2.0, 4.25, 0.0), roof_material)
+        roof_right.rotation.z = 0.48
+        _village_box(house, "Front_Door", Vector3(1.25, 2.25, 0.14), Vector3(0.0, 1.12, -3.58), wood_material)
+        for side in [-1.0, 1.0]:
+            _village_box(house, "Window", Vector3(1.15, 1.05, 0.12), Vector3(side * 2.35, 2.35, -3.59), glass_material)
+        var chimney := _village_box(house, "Chimney", Vector3(0.75, 1.7, 0.75), Vector3(2.3, 4.8, 1.6), wall_materials[1])
+        chimney.rotation.y = 0.15
+
+    village_well_position = Vector3(village_center.x, _height_at(village_center.x, village_center.z - 38.0), village_center.z - 38.0)
+    var well_root := Node3D.new()
+    well_root.name = "Village_Well"
+    well_root.position = village_well_position
+    add_child(well_root)
+    var well_stone := StandardMaterial3D.new()
+    well_stone.albedo_color = Color(0.43, 0.46, 0.42)
+    well_stone.roughness = 0.98
+    var well_dark := StandardMaterial3D.new()
+    well_dark.albedo_color = Color(0.12, 0.22, 0.24)
+    well_dark.roughness = 0.35
+    var well_water := StandardMaterial3D.new()
+    well_water.albedo_color = Color(0.08, 0.38, 0.51)
+    well_water.emission_enabled = true
+    well_water.emission = Color(0.025, 0.12, 0.18)
+    well_water.emission_energy_multiplier = 0.35
+    var well_pad := MeshInstance3D.new()
+    var well_pad_mesh := CylinderMesh.new()
+    well_pad_mesh.top_radius = 3.2
+    well_pad_mesh.bottom_radius = 3.2
+    well_pad_mesh.height = 0.18
+    well_pad.mesh = well_pad_mesh
+    well_pad.position.y = 0.09
+    well_pad.material_override = well_stone
+    well_root.add_child(well_pad)
+    var well_body := MeshInstance3D.new()
+    var well_body_mesh := CylinderMesh.new()
+    well_body_mesh.top_radius = 1.28
+    well_body_mesh.bottom_radius = 1.38
+    well_body_mesh.height = 1.35
+    well_body.mesh = well_body_mesh
+    well_body.position.y = 0.76
+    well_body.material_override = well_stone
+    well_root.add_child(well_body)
+    var well_inner := MeshInstance3D.new()
+    var well_inner_mesh := CylinderMesh.new()
+    well_inner_mesh.top_radius = 1.03
+    well_inner_mesh.bottom_radius = 1.03
+    well_inner_mesh.height = 0.08
+    well_inner.mesh = well_inner_mesh
+    well_inner.position.y = 1.25
+    well_inner.material_override = well_dark
+    well_root.add_child(well_inner)
+    var well_surface := MeshInstance3D.new()
+    var well_surface_mesh := CylinderMesh.new()
+    well_surface_mesh.top_radius = 0.90
+    well_surface_mesh.bottom_radius = 0.90
+    well_surface_mesh.height = 0.035
+    well_surface.mesh = well_surface_mesh
+    well_surface.position.y = 1.30
+    well_surface.material_override = well_water
+    well_root.add_child(well_surface)
+    for well_post_side in [-1.0, 1.0]:
+        _village_box(well_root, "Well_Timber_Post", Vector3(0.22, 3.2, 0.22), Vector3(well_post_side * 1.48, 2.15, 0.0), wood_material)
+    _village_box(well_root, "Well_Crossbeam", Vector3(3.35, 0.22, 0.25), Vector3(0.0, 3.78, 0.0), wood_material)
+    _village_box(well_root, "Well_Canopy", Vector3(4.2, 0.22, 3.25), Vector3(0.0, 3.92, 0.0), roof_material)
+    _village_box(well_root, "Well_Bucket", Vector3(0.48, 0.48, 0.48), Vector3(0.0, 1.82, 0.55), wood_material)
+
+    # Two compact market stalls add a lived-in center to the settlement.
+    for stall_index in range(2):
+        var stall_side := -1.0 if stall_index == 0 else 1.0
+        var stall_x := village_center.x + stall_side * 10.5
+        var stall_z := village_center.z - 30.0
+        var stall_root := Node3D.new()
+        stall_root.name = "Village_Market_Stall_%02d" % stall_index
+        stall_root.position = Vector3(stall_x, _height_at(stall_x, stall_z), stall_z)
+        add_child(stall_root)
+        for post_x in [-2.25, 2.25]:
+            for post_z in [-1.55, 1.55]:
+                _village_box(stall_root, "Market_Post", Vector3(0.18, 2.85, 0.18), Vector3(post_x, 1.42, post_z), wood_material)
+        _village_box(stall_root, "Market_Counter", Vector3(4.85, 0.82, 1.05), Vector3(0.0, 0.62, 0.35), wood_material)
+        _village_box(stall_root, "Market_Countertop", Vector3(5.0, 0.13, 1.18), Vector3(0.0, 1.10, 0.35), wood_material)
+        var awning_colors := [Color(0.62, 0.25, 0.17), Color(0.83, 0.70, 0.49)]
+        for stripe_index in range(5):
+            var stripe_material := StandardMaterial3D.new()
+            stripe_material.albedo_color = awning_colors[(stripe_index + stall_index) % awning_colors.size()]
+            stripe_material.roughness = 0.96
+            _village_box(stall_root, "Market_Awning_Stripe", Vector3(1.08, 0.18, 4.05), Vector3(-2.16 + float(stripe_index) * 1.08, 2.92, 0.0), stripe_material)
+        for barrel_side in [-1.0, 1.0]:
+            var market_barrel := MeshInstance3D.new()
+            var market_barrel_mesh := CylinderMesh.new()
+            market_barrel_mesh.top_radius = 0.36
+            market_barrel_mesh.bottom_radius = 0.43
+            market_barrel_mesh.height = 0.92
+            market_barrel.mesh = market_barrel_mesh
+            market_barrel.position = Vector3(barrel_side * 1.72, 0.48, -0.65)
+            market_barrel.material_override = wood_material
+            stall_root.add_child(market_barrel)
+        var produce_colors := [Color(0.72, 0.20, 0.12), Color(0.86, 0.62, 0.16), Color(0.38, 0.62, 0.25), Color(0.70, 0.30, 0.18)]
+        for produce_index in range(8):
+            var produce := MeshInstance3D.new()
+            var produce_mesh := SphereMesh.new()
+            produce_mesh.radius = 0.16
+            produce_mesh.height = 0.22
+            produce.mesh = produce_mesh
+            produce.position = Vector3(-1.65 + float(produce_index % 4) * 1.08, 1.32, -0.02 + float(produce_index / 4) * 0.48)
+            produce.material_override = _build_material(produce_colors[produce_index % produce_colors.size()])
+            stall_root.add_child(produce)
+
+    for lamp_index in range(4):
+        var lamp_x := village_center.x + ( -1.0 if lamp_index % 2 == 0 else 1.0) * 5.5
+        var lamp_z := village_center.z - 22.0 + float(lamp_index) * 15.0
+        var pole := _village_box(self, "Village_Lamp_Post", Vector3(0.16, 3.4, 0.16), Vector3(lamp_x, _height_at(lamp_x, lamp_z) + 1.7, lamp_z), wood_material)
+        var glow := StandardMaterial3D.new()
+        glow.albedo_color = Color(1.0, 0.73, 0.38)
+        glow.emission_enabled = true
+        glow.emission = Color(1.0, 0.55, 0.2)
+        glow.emission_energy_multiplier = 1.2
+        var lantern := _village_box(self, "Warm_Lantern", Vector3(0.42, 0.48, 0.42), pole.position + Vector3(0.0, 1.72, 0.0), glow)
+
+    var clothing_colors := [Color(0.25, 0.36, 0.48), Color(0.55, 0.29, 0.18), Color(0.36, 0.43, 0.25), Color(0.54, 0.48, 0.34), Color(0.30, 0.27, 0.38), Color(0.62, 0.42, 0.25), Color(0.24, 0.42, 0.40), Color(0.48, 0.32, 0.29)]
+    var skin_material := StandardMaterial3D.new()
+    skin_material.albedo_color = Color(0.66, 0.46, 0.33)
+    skin_material.roughness = 0.9
+    var npc_rng := RandomNumberGenerator.new()
+    npc_rng.seed = 20261112
+    for index in range(8):
+        var npc := Node3D.new()
+        npc.name = "Villager_%02d" % (index + 1)
+        var x := village_center.x + npc_rng.randf_range(-13.0, 13.0)
+        var z := village_center.z + npc_rng.randf_range(-24.0, 25.0)
+        npc.position = Vector3(x, _height_at(x, z), z)
+        add_child(npc)
+        var outfit := StandardMaterial3D.new()
+        outfit.albedo_color = clothing_colors[index]
+        outfit.roughness = 0.95
+        var torso := MeshInstance3D.new()
+        var torso_mesh := CapsuleMesh.new()
+        torso_mesh.radius = 0.32
+        torso_mesh.height = 1.05
+        torso.mesh = torso_mesh
+        torso.position.y = 1.05
+        torso.material_override = outfit
+        npc.add_child(torso)
+        var head := MeshInstance3D.new()
+        var head_mesh := SphereMesh.new()
+        head_mesh.radius = 0.23
+        head_mesh.height = 0.44
+        head.mesh = head_mesh
+        head.position.y = 1.78
+        head.material_override = skin_material
+        npc.add_child(head)
+        var npc_arms: Array[MeshInstance3D] = []
+        var npc_legs: Array[MeshInstance3D] = []
+        for side in [-1.0, 1.0]:
+            var arm := MeshInstance3D.new()
+            var arm_mesh := CapsuleMesh.new()
+            arm_mesh.radius = 0.095
+            arm_mesh.height = 0.72
+            arm.mesh = arm_mesh
+            arm.position = Vector3(side * 0.39, 1.08, 0.0)
+            arm.rotation.z = side * -0.12
+            arm.material_override = outfit
+            npc.add_child(arm)
+            npc_arms.append(arm)
+            var leg := MeshInstance3D.new()
+            var leg_mesh := CapsuleMesh.new()
+            leg_mesh.radius = 0.12
+            leg_mesh.height = 0.78
+            leg.mesh = leg_mesh
+            leg.position = Vector3(side * 0.16, 0.39, 0.0)
+            leg.material_override = wood_material
+            npc.add_child(leg)
+            npc_legs.append(leg)
+        village_agents.append({
+            "root": npc,
+            "home": npc.position,
+            "target": npc.position,
+            "timer": npc_rng.randf_range(1.0, 4.0),
+            "speed": npc_rng.randf_range(0.65, 1.05),
+            "phase": npc_rng.randf_range(0.0, TAU),
+            "arms": npc_arms,
+            "legs": npc_legs,
+            "walking": false,
+            "schedule_slot": -1
+        })
+
+func _villager_schedule_slot(hour: float) -> int:
+    if hour >= 6.0 and hour < 10.0:
+        return 0 # Morning market
+    if hour >= 10.0 and hour < 16.0:
+        return 1 # Village lane and neighbours
+    if hour >= 16.0 and hour < 21.0:
+        return 2 # Evening water stop
+    return 3 # Home at night
+
+func _villager_schedule_target(index: int, home: Vector3, hour: float) -> Vector3:
+    var slot := _villager_schedule_slot(hour)
+    var anchor := home
+    match slot:
+        0:
+            anchor = Vector3(-82.0, 0.0, 46.0)
+        1:
+            anchor = Vector3(-82.0, 0.0, 76.0)
+        2:
+            anchor = village_well_position
+        _:
+            return home
+    var angle := float(index) * TAU / 8.0
+    var radius := 1.8 + float(index % 3) * 0.65
+    anchor.x += cos(angle) * radius
+    anchor.z += sin(angle) * radius
+    anchor.y = _height_at(anchor.x, anchor.z)
+    return anchor
+
+func _update_village_agents(delta: float) -> void:
+    if village_agents.is_empty():
+        return
+
+    # Villager routines are intentionally lower frequency than player movement.
+    village_update_accumulator += delta
+    if village_update_accumulator < 0.16:
+        return
+    var step_delta := minf(village_update_accumulator, 0.32)
+    village_update_accumulator = 0.0
+
+    for index in range(village_agents.size()):
+        var villager: Dictionary = village_agents[index]
+        var root: Node3D = villager["root"]
+        if not is_instance_valid(root):
+            continue
+
+        if player:
+            var distance_squared := root.global_position.distance_squared_to(player.global_position)
+            root.visible = distance_squared <= 155.0 * 155.0
+            if distance_squared > 110.0 * 110.0:
+                villager["walking"] = false
+                villager["timer"] = maxf(0.0, float(villager["timer"]) - step_delta)
+                village_agents[index] = villager
+                continue
+
+        var home: Vector3 = villager["home"]
+        var target: Vector3 = villager["target"]
+        var timer := float(villager["timer"]) - step_delta
+        var current_schedule := _villager_schedule_slot(world_clock)
+        if int(villager.get("schedule_slot", -1)) != current_schedule:
+            target = _villager_schedule_target(index, home, world_clock)
+            timer = randf_range(4.0, 7.0)
+            villager["schedule_slot"] = current_schedule
+        elif timer <= 0.0 or Vector2(root.position.x - target.x, root.position.z - target.z).length() < 0.55:
+            var schedule_anchor := _villager_schedule_target(index, home, world_clock)
+            var angle := randf() * TAU
+            var distance := randf_range(0.8, 2.5)
+            target = schedule_anchor + Vector3(cos(angle) * distance, 0.0, sin(angle) * distance)
+            target.y = _height_at(target.x, target.z)
+            timer = randf_range(2.0, 6.0)
+        var direction := Vector3(target.x - root.position.x, 0.0, target.z - root.position.z)
+        var is_walking := direction.length() > 0.12
+        villager["walking"] = is_walking
+        if is_walking:
+            root.position += direction.normalized() * float(villager["speed"]) * step_delta
+            root.rotation.y = lerp_angle(root.rotation.y, atan2(-direction.x, -direction.z), minf(1.0, step_delta * 3.0))
+        root.position.y = lerpf(root.position.y, _height_at(root.position.x, root.position.z), minf(1.0, step_delta * 8.0))
+        villager["target"] = target
+        villager["timer"] = timer
+        village_agents[index] = villager
+
+func _animate_villager_limbs(delta: float) -> void:
+    for index in range(village_agents.size()):
+        var villager: Dictionary = village_agents[index]
+        var arms: Array = villager.get("arms", [])
+        var legs: Array = villager.get("legs", [])
+        if arms.size() < 2 or legs.size() < 2:
+            continue
+        var phase := float(villager.get("phase", 0.0))
+        var swing := 0.0
+        if bool(villager.get("walking", false)):
+            phase += delta * float(villager.get("speed", 0.8)) * 7.0
+            swing = sin(phase) * 0.42
+        for limb_index in range(2):
+            var arm := arms[limb_index] as MeshInstance3D
+            var leg := legs[limb_index] as MeshInstance3D
+            if is_instance_valid(arm):
+                var arm_target := swing if limb_index == 0 else -swing
+                arm.rotation.x = lerpf(arm.rotation.x, arm_target, minf(1.0, delta * 12.0))
+            if is_instance_valid(leg):
+                var leg_target := -swing if limb_index == 0 else swing
+                leg.rotation.x = lerpf(leg.rotation.x, leg_target, minf(1.0, delta * 12.0))
+        villager["phase"] = phase
+        village_agents[index] = villager
+
+func _animate_wildlife_limbs(delta: float) -> void:
+    for index in range(wildlife_agents.size()):
+        var animal: Dictionary = wildlife_agents[index]
+        var root: Node3D = animal.get("root")
+        if not is_instance_valid(root) or not root.visible:
+            continue
+        var legs: Array = animal.get("legs", [])
+        if legs.size() < 4:
+            continue
+        var phase := float(animal.get("phase", 0.0))
+        var swing := 0.0
+        if bool(animal.get("walking", false)):
+            phase += delta * float(animal.get("speed", 1.0)) * 7.0
+            swing = sin(phase) * 0.38
+        for leg_index in range(legs.size()):
+            var leg := legs[leg_index] as MeshInstance3D
+            if is_instance_valid(leg):
+                var target_angle := swing if leg_index % 2 == 0 else -swing
+                leg.rotation.x = lerpf(leg.rotation.x, target_angle, minf(1.0, delta * 10.0))
+        animal["phase"] = phase
+        wildlife_agents[index] = animal
+
+func _constrain_wildlife_target(target: Vector3, origin: Vector3) -> Vector3:
+    # Deer remain in the temperate valley and do not deliberately route through deep water.
+    target.x = clampf(target.x, -135.0, 135.0)
+    target.z = clampf(target.z, -145.0, 145.0)
+    var river_center := sin(target.z * 0.018) * 18.0
+    var origin_side := -1.0 if origin.x < sin(origin.z * 0.018) * 18.0 else 1.0
+    var river_offset := target.x - river_center
+    if absf(river_offset) < 10.0:
+        target.x = river_center + origin_side * 10.0
+    # Keep the destination on the animal's current bank when the river bends.
+    var local_center := sin(target.z * 0.018) * 18.0
+    if (origin.x - sin(origin.z * 0.018) * 18.0) * (target.x - local_center) < 0.0:
+        target.x = local_center + origin_side * 10.0
+    return target
+
+func _update_wildlife(delta: float) -> void:
+    if wildlife_agents.is_empty():
+        return
+
+    # Wildlife uses a 10 Hz simulation budget instead of doing all AI work every render frame.
+    wildlife_update_accumulator += delta
+    if wildlife_update_accumulator < 0.10:
+        return
+    var step_delta := minf(wildlife_update_accumulator, 0.25)
+    wildlife_update_accumulator = 0.0
+
+    for index in range(wildlife_agents.size()):
+        var animal: Dictionary = wildlife_agents[index]
+        var root: Node3D = animal["root"]
+        if not is_instance_valid(root):
+            continue
+
+        var timer := float(animal["timer"]) - step_delta
+        if player:
+            var distance_squared := root.global_position.distance_squared_to(player.global_position)
+            # Keep distant wildlife out of the render and AI workload on mobile.
+            if distance_squared > 120.0 * 120.0:
+                animal["walking"] = false
+                root.visible = false
+                animal["timer"] = maxf(0.0, timer)
+                wildlife_agents[index] = animal
+                continue
+            root.visible = true
+            if distance_squared > 100.0 * 100.0:
+                animal["walking"] = false
+                animal["timer"] = maxf(0.0, timer)
+                wildlife_agents[index] = animal
+                continue
+
+        var target: Vector3 = animal["target"]
+        var away := Vector3.ZERO
+        var fleeing := false
+        if player:
+            var from_player := root.global_position - player.global_position
+            from_player.y = 0.0
+            var player_distance_squared := from_player.length_squared()
+            if player_distance_squared < 11.0 * 11.0 and player_distance_squared > 0.01:
+                fleeing = true
+                away = from_player.normalized()
+
+        if fleeing:
+            target = root.global_position + away * wildlife_rng.randf_range(16.0, 24.0)
+            target.x = clampf(target.x, -WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
+            timer = wildlife_rng.randf_range(2.0, 3.5)
+        elif timer <= 0.0 or Vector2(root.position.x - target.x, root.position.z - target.z).length() < 1.2:
+            var angle := wildlife_rng.randf_range(0.0, TAU)
+            var distance := wildlife_rng.randf_range(7.0, 18.0)
+            target = root.position + Vector3(cos(angle) * distance, 0.0, sin(angle) * distance)
+            timer = wildlife_rng.randf_range(3.0, 7.0)
+
+        target = _constrain_wildlife_target(target, root.position)
+        var direction := Vector3(target.x - root.position.x, 0.0, target.z - root.position.z)
+        var animal_speed := 3.8 if fleeing else float(animal["speed"])
+        var is_walking := direction.length() > 0.1
+        animal["walking"] = is_walking
+        if is_walking:
+            var movement := direction.normalized() * animal_speed * step_delta
+            root.position.x += movement.x
+            root.position.z += movement.z
+            var target_angle := atan2(-direction.x, -direction.z)
+            root.rotation.y = lerp_angle(root.rotation.y, target_angle, minf(1.0, step_delta * 4.0))
+        var ground_height := _height_at(root.position.x, root.position.z)
+        root.position.y = lerpf(root.position.y, ground_height, minf(1.0, step_delta * 8.0))
+        animal["target"] = target
+        animal["timer"] = timer
+        wildlife_agents[index] = animal
+
+
+func _create_riverfront_landmarks() -> void:
+    var crossing_z := 72.0
+    var river_x := sin(crossing_z * 0.018) * 18.0
+    var west_bank_x := river_x - 12.5
+    var east_bank_x := river_x + 12.5
+    var bank_height := maxf(_height_at(west_bank_x, crossing_z), _height_at(east_bank_x, crossing_z))
+    var deck_height := bank_height + 0.42
+    var timber := _build_material(Color(0.34, 0.23, 0.14))
+    var timber_light := _build_material(Color(0.53, 0.38, 0.23))
+    var stone := _build_material(Color(0.43, 0.46, 0.43))
+    var lantern_glow := _build_material(Color(1.0, 0.68, 0.30), true)
+
+    river_crossing_position = Vector3(river_x, deck_height, crossing_z)
+    var bridge := Node3D.new()
+    bridge.name = "Riverlight_Crossing"
+    bridge.position = river_crossing_position
+    add_child(bridge)
+    _village_box(bridge, "Bridge_Deck", Vector3(28.0, 0.42, 5.2), Vector3(0.0, -0.21, 0.0), timber)
+    for plank_index in range(18):
+        var plank_x := -13.4 + float(plank_index) * 1.58
+        _village_box(bridge, "Deck_Plank", Vector3(0.075, 0.045, 5.18), Vector3(plank_x, 0.025, 0.0), timber_light)
+    for side in [-1.0, 1.0]:
+        for post_index in range(10):
+            var post_x := -13.0 + float(post_index) * (26.0 / 9.0)
+            _village_box(bridge, "Bridge_Rail_Post", Vector3(0.24, 1.65, 0.24), Vector3(post_x, 0.82, side * 2.42), timber_light)
+        _village_box(bridge, "Bridge_Railing", Vector3(27.0, 0.22, 0.24), Vector3(0.0, 1.62, side * 2.42), timber)
+        _village_box(bridge, "Bridge_Lower_Rail", Vector3(27.0, 0.15, 0.18), Vector3(0.0, 0.62, side * 2.42), timber)
+    for pier_side in [-1.0, 1.0]:
+        _village_box(bridge, "Stone_Bridge_Pier", Vector3(1.15, 1.65, 1.1), Vector3(pier_side * 1.7, -1.0, 0.0), stone)
+    var bridge_body := StaticBody3D.new()
+    var bridge_collision := CollisionShape3D.new()
+    var bridge_shape := BoxShape3D.new()
+    bridge_shape.size = Vector3(28.0, 0.42, 5.2)
+    bridge_collision.shape = bridge_shape
+    bridge_collision.position.y = -0.21
+    bridge_body.add_child(bridge_collision)
+    bridge.add_child(bridge_body)
+
+    # A small stone approach guides walkers from the existing village to the crossing.
+    for step_index in range(23):
+        var progress := float(step_index) / 22.0
+        var path_x := lerpf(-82.0, west_bank_x - 1.2, progress)
+        var path_z := crossing_z + sin(progress * PI) * 3.2
+        var slab := _village_box(
+            self,
+            "River_Path_Stone",
+            Vector3(2.75, 0.14, 2.05),
+            Vector3(path_x, _height_at(path_x, path_z) + 0.08, path_z),
+            stone
+        )
+        slab.rotation.y = sin(progress * PI * 2.0) * 0.035
+
+    # An open timber pavilion gives the east bank a destination and a quiet resting place.
+    var pavilion_x := east_bank_x + 10.0
+    var pavilion_y := _height_at(pavilion_x, crossing_z)
+    river_pavilion_position = Vector3(pavilion_x, pavilion_y, crossing_z)
+    var pavilion := Node3D.new()
+    pavilion.name = "River_Whisper_Pavilion"
+    pavilion.position = Vector3(pavilion_x, pavilion_y, crossing_z)
+    add_child(pavilion)
+    _village_box(pavilion, "Pavilion_Stone_Platform", Vector3(10.0, 0.34, 9.0), Vector3(0.0, 0.17, 0.0), stone)
+    for side_x in [-1.0, 1.0]:
+        for side_z in [-1.0, 1.0]:
+            _village_box(pavilion, "Pavilion_Timber_Post", Vector3(0.32, 3.9, 0.32), Vector3(side_x * 4.35, 2.12, side_z * 3.85), timber_light)
+            _village_box(pavilion, "Pavilion_Capital", Vector3(0.62, 0.22, 0.62), Vector3(side_x * 4.35, 4.12, side_z * 3.85), timber)
+    var pavilion_roof_left := _village_box(pavilion, "Pavilion_Roof_Left", Vector3(5.35, 0.30, 10.0), Vector3(-2.55, 4.22, 0.0), timber)
+    pavilion_roof_left.rotation.z = 0.16
+    var pavilion_roof_right := _village_box(pavilion, "Pavilion_Roof_Right", Vector3(5.35, 0.30, 10.0), Vector3(2.55, 4.22, 0.0), timber)
+    pavilion_roof_right.rotation.z = -0.16
+    _village_box(pavilion, "Pavilion_Ridge", Vector3(0.28, 0.32, 10.2), Vector3(0.0, 4.65, 0.0), timber_light)
+    for bench_z in [-2.65, 2.65]:
+        _village_box(pavilion, "Pavilion_Bench_Seat", Vector3(2.65, 0.28, 0.64), Vector3(0.0, 0.48, bench_z), timber_light)
+        _village_box(pavilion, "Pavilion_Bench_Back", Vector3(2.65, 0.78, 0.18), Vector3(0.0, 0.91, bench_z + 0.25), timber)
+    for lamp_x in [-4.05, 4.05]:
+        for lamp_z in [-3.55, 3.55]:
+            _village_box(pavilion, "Pavilion_Lantern", Vector3(0.42, 0.5, 0.42), Vector3(lamp_x, 3.25, lamp_z), lantern_glow)
+    var pavilion_body := StaticBody3D.new()
+    var pavilion_collision := CollisionShape3D.new()
+    var pavilion_shape := BoxShape3D.new()
+    pavilion_shape.size = Vector3(10.0, 0.34, 9.0)
+    pavilion_collision.shape = pavilion_shape
+    pavilion_collision.position.y = 0.17
+    pavilion_body.add_child(pavilion_collision)
+    pavilion.add_child(pavilion_body)
+
+    # Three compact willow silhouettes frame the pavilion without adding heavy particle effects.
+    for willow_index in range(3):
+        var angle := TAU * float(willow_index) / 3.0
+        var willow_x := pavilion_x + cos(angle) * 10.0
+        var willow_z := crossing_z + sin(angle) * 10.0
+        var willow := Node3D.new()
+        willow.name = "River_Willow_%02d" % willow_index
+        willow.position = Vector3(willow_x, _height_at(willow_x, willow_z), willow_z)
+        add_child(willow)
+        var trunk := MeshInstance3D.new()
+        var trunk_mesh := CylinderMesh.new()
+        trunk_mesh.top_radius = 0.18
+        trunk_mesh.bottom_radius = 0.34
+        trunk_mesh.height = 5.2
+        trunk.mesh = trunk_mesh
+        trunk.position.y = 2.6
+        trunk.material_override = timber
+        willow.add_child(trunk)
+        for canopy_index in range(4):
+            var canopy := MeshInstance3D.new()
+            var canopy_mesh := SphereMesh.new()
+            canopy_mesh.radius = 2.2
+            canopy_mesh.height = 2.5
+            canopy.mesh = canopy_mesh
+            canopy.position = Vector3(
+                cos(float(canopy_index) * TAU / 4.0) * 1.25,
+                4.65 - float(canopy_index % 2) * 0.45,
+                sin(float(canopy_index) * TAU / 4.0) * 1.25
+            )
+            canopy.scale = Vector3(1.0, 0.72, 1.0)
+            canopy.material_override = _build_material(Color(0.23, 0.40, 0.22).lerp(Color(0.38, 0.52, 0.28), float(canopy_index) * 0.12))
+            willow.add_child(canopy)
+
+
+func _create_valley_lookout() -> void:
+    # A quiet high-ground destination reached from the river pavilion by a stone path.
+    var platform_x := 110.0
+    var platform_z := 70.0
+    valley_lookout_position = Vector3(platform_x, _height_at(platform_x, platform_z), platform_z)
+    var stone := _build_material(Color(0.49, 0.51, 0.47))
+    var stone_light := _build_material(Color(0.64, 0.62, 0.52))
+    var dark_wood := _build_material(Color(0.25, 0.17, 0.11))
+    var warm_wood := _build_material(Color(0.48, 0.33, 0.20))
+    var banner_material := _build_material(Color(0.70, 0.36, 0.18))
+    var brass := _build_material(Color(0.72, 0.57, 0.27), true)
+
+    for path_index in range(18):
+        var progress := float(path_index) / 17.0
+        var path_x := lerpf(river_pavilion_position.x + 8.0, platform_x - 8.0, progress)
+        var path_z := platform_z + sin(progress * PI) * 6.0
+        var slab := _village_box(
+            self,
+            "Lookout_Stone_Path",
+            Vector3(2.8, 0.16, 2.0),
+            Vector3(path_x, _height_at(path_x, path_z) + 0.10, path_z),
+            stone_light if path_index % 3 == 0 else stone
+        )
+        slab.rotation.y = sin(progress * PI * 2.0) * 0.06
+
+    var overlook := Node3D.new()
+    overlook.name = "Valleywatch_Overlook"
+    overlook.position = valley_lookout_position
+    add_child(overlook)
+
+    var plinth := MeshInstance3D.new()
+    var plinth_mesh := CylinderMesh.new()
+    plinth_mesh.top_radius = 8.4
+    plinth_mesh.bottom_radius = 9.0
+    plinth_mesh.height = 0.72
+    plinth_mesh.radial_segments = 24
+    plinth.mesh = plinth_mesh
+    plinth.position.y = 0.36
+    plinth.material_override = stone
+    overlook.add_child(plinth)
+
+    var platform_top := MeshInstance3D.new()
+    var platform_top_mesh := CylinderMesh.new()
+    platform_top_mesh.top_radius = 7.9
+    platform_top_mesh.bottom_radius = 7.9
+    platform_top_mesh.height = 0.16
+    platform_top_mesh.radial_segments = 24
+    platform_top.mesh = platform_top_mesh
+    platform_top.position.y = 0.80
+    platform_top.material_override = stone_light
+    overlook.add_child(platform_top)
+
+    for ring_index in range(12):
+        var ring_angle := TAU * float(ring_index) / 12.0
+        var ring_position := Vector3(cos(ring_angle) * 7.65, 0.93, sin(ring_angle) * 7.65)
+        var border_stone := _village_box(overlook, "Overlook_Rim_Stone", Vector3(2.85, 0.34, 0.48), ring_position, stone)
+        border_stone.rotation.y = ring_angle + PI * 0.5
+
+    for post_index in range(4):
+        var post_angle := PI * 0.25 + float(post_index) * PI * 0.5
+        var post_position := Vector3(cos(post_angle) * 5.9, 3.55, sin(post_angle) * 5.9)
+        var pillar := MeshInstance3D.new()
+        var pillar_mesh := CylinderMesh.new()
+        pillar_mesh.top_radius = 0.24
+        pillar_mesh.bottom_radius = 0.36
+        pillar_mesh.height = 5.2
+        pillar.mesh = pillar_mesh
+        pillar.position = post_position
+        pillar.material_override = stone_light
+        overlook.add_child(pillar)
+        var capital := _village_box(overlook, "Overlook_Pillar_Capital", Vector3(0.86, 0.30, 0.86), post_position + Vector3(0.0, 2.75, 0.0), warm_wood)
+        capital.rotation.y = post_angle
+        if post_index == 0 or post_index == 2:
+            var banner := _village_box(overlook, "Overlook_Banner", Vector3(0.10, 2.05, 1.35), post_position + Vector3(0.0, 1.28, 0.0), banner_material)
+            banner.rotation.y = post_angle + PI * 0.5
+            _village_box(overlook, "Overlook_Banner_Tassel", Vector3(0.12, 0.18, 1.55), banner.position + Vector3(0.0, -1.03, 0.0), brass)
+
+    for beam_index in range(4):
+        var beam_angle := PI * 0.25 + float(beam_index) * PI * 0.5
+        var beam := _village_box(
+            overlook,
+            "Overlook_Top_Beam",
+            Vector3(8.9, 0.28, 0.34),
+            Vector3(cos(beam_angle) * 3.05, 6.05, sin(beam_angle) * 3.05),
+            dark_wood
+        )
+        beam.rotation.y = beam_angle + PI * 0.5
+
+    for bench_angle in [PI, 0.0]:
+        var bench_position := Vector3(cos(bench_angle) * 4.15, 1.15, sin(bench_angle) * 4.15)
+        var bench_seat := _village_box(overlook, "Lookout_Bench_Seat", Vector3(3.0, 0.24, 0.72), bench_position, warm_wood)
+        bench_seat.rotation.y = bench_angle + PI * 0.5
+        var bench_back := _village_box(overlook, "Lookout_Bench_Back", Vector3(3.0, 0.95, 0.18), bench_position + Vector3(0.0, 0.58, 0.48), dark_wood)
+        bench_back.rotation.y = bench_angle + PI * 0.5
+
+    var telescope_mount := MeshInstance3D.new()
+    var mount_mesh := CylinderMesh.new()
+    mount_mesh.top_radius = 0.16
+    mount_mesh.bottom_radius = 0.20
+    mount_mesh.height = 1.35
+    telescope_mount.mesh = mount_mesh
+    telescope_mount.position = Vector3(0.0, 1.48, -2.2)
+    telescope_mount.material_override = dark_wood
+    overlook.add_child(telescope_mount)
+    var telescope := MeshInstance3D.new()
+    var telescope_mesh := CylinderMesh.new()
+    telescope_mesh.top_radius = 0.22
+    telescope_mesh.bottom_radius = 0.31
+    telescope_mesh.height = 2.2
+    telescope.mesh = telescope_mesh
+    telescope.position = Vector3(0.0, 2.38, -2.2)
+    telescope.rotation.x = PI * 0.5 - 0.22
+    telescope.material_override = brass
+    overlook.add_child(telescope)
+    var lens := MeshInstance3D.new()
+    var lens_mesh := SphereMesh.new()
+    lens_mesh.radius = 0.23
+    lens_mesh.height = 0.08
+    lens.mesh = lens_mesh
+    lens.position = Vector3(0.0, 2.56, -3.24)
+    lens.material_override = _build_material(Color(0.13, 0.36, 0.48), true)
+    overlook.add_child(lens)
+
+    var beacon := OmniLight3D.new()
+    beacon.name = "Overlook_Beacon"
+    beacon.position = Vector3(0.0, 6.25, 0.0)
+    beacon.light_color = Color(1.0, 0.72, 0.39)
+    beacon.light_energy = 0.42
+    beacon.omni_range = 9.0
+    overlook.add_child(beacon)
+
+    var platform_body := StaticBody3D.new()
+    var platform_collision := CollisionShape3D.new()
+    var platform_shape := CylinderShape3D.new()
+    platform_shape.radius = 8.0
+    platform_shape.height = 0.9
+    platform_collision.shape = platform_shape
+    platform_collision.position.y = 0.36
+    platform_body.add_child(platform_collision)
+    overlook.add_child(platform_body)
 
 func _create_campsite() -> void:
     camp_position = Vector3(18.0, _height_at(18.0, 0.0), 0.0)
@@ -674,24 +4124,34 @@ func _create_memory_stone() -> void:
     stone.material_override = stone_material
     add_child(stone)
 
-    var crystal := MeshInstance3D.new()
+    memory_crystal = MeshInstance3D.new()
     var crystal_mesh := SphereMesh.new()
     crystal_mesh.radius = 0.22
     crystal_mesh.height = 0.52
-    crystal.mesh = crystal_mesh
-    crystal.position = memory_position + Vector3(0, 1.62, 0)
+    memory_crystal.mesh = crystal_mesh
+    memory_crystal.position = memory_position + Vector3(0, 1.62, 0)
     var crystal_material := StandardMaterial3D.new()
     crystal_material.albedo_color = Color(0.20, 0.72, 0.66)
     crystal_material.emission_enabled = true
     crystal_material.emission = Color(0.08, 0.48, 0.42)
     crystal_material.emission_energy_multiplier = 0.55
-    crystal.material_override = crystal_material
-    add_child(crystal)
+    memory_crystal.material_override = crystal_material
+    add_child(memory_crystal)
 
 func _awaken_world_memory() -> void:
+    if lan_active and not multiplayer.is_server():
+        rpc_id(1, "_rpc_request_interaction")
+        return
+    _apply_world_memory()
+    if lan_active and multiplayer.is_server():
+        rpc("_rpc_world_memory_activated")
+
+func _apply_world_memory() -> void:
     if memory_awakened:
         return
     memory_awakened = true
+    if is_instance_valid(memory_crystal):
+        memory_crystal.visible = false
 
     var trail_mesh := SphereMesh.new()
     trail_mesh.radius = 0.18
@@ -740,29 +4200,45 @@ func _update_day_cycle(delta: float) -> void:
     sky_material.ground_bottom_color = Color(0.015, 0.025, 0.055).lerp(Color(0.12, 0.18, 0.15), daylight)
     sky_material.ground_horizon_color = Color(0.08, 0.11, 0.18).lerp(Color(0.48, 0.58, 0.48), daylight)
 
-func _physics_process(delta: float) -> void:
-    if not player or not camera:
-        return
-
-    camera_pivot.global_position = player.global_position + Vector3(0, 1.55, 0)
-
-    var horizontal := Vector2.ZERO
-    horizontal.x = float(Input.is_key_pressed(KEY_D) or _button_down("right")) - float(Input.is_key_pressed(KEY_A) or _button_down("left"))
-    horizontal.y = float(Input.is_key_pressed(KEY_S) or _button_down("back")) - float(Input.is_key_pressed(KEY_W) or _button_down("forward"))
-    horizontal = horizontal.normalized()
-
+func _camera_relative_direction(input_vector: Vector2) -> Vector3:
+    if not camera or input_vector.length_squared() < 0.0001:
+        return Vector3.ZERO
     var camera_forward := -camera.global_transform.basis.z
     var camera_right := camera.global_transform.basis.x
     camera_forward.y = 0.0
     camera_right.y = 0.0
     camera_forward = camera_forward.normalized()
     camera_right = camera_right.normalized()
+    return (camera_right * input_vector.x - camera_forward * input_vector.y).normalized()
 
-    var direction := camera_right * horizontal.x - camera_forward * horizontal.y
-    direction = direction.normalized()
+func _physics_process(delta: float) -> void:
+    if _is_frontend_visible():
+        if player:
+            player.velocity = Vector3.ZERO
+        return
+    if not player or not camera:
+        return
 
-    player.velocity.x = direction.x * PLAYER_SPEED
-    player.velocity.z = direction.z * PLAYER_SPEED
+    var camera_target := player.global_position + Vector3(0, 1.55, 0)
+    camera_pivot.global_position = camera_pivot.global_position.lerp(camera_target, minf(1.0, delta * 16.0))
+
+    var horizontal := joystick_vector
+    horizontal.x += float(Input.is_key_pressed(KEY_D) or _button_down("right")) - float(Input.is_key_pressed(KEY_A) or _button_down("left"))
+    horizontal.y += float(Input.is_key_pressed(KEY_S) or _button_down("back")) - float(Input.is_key_pressed(KEY_W) or _button_down("forward"))
+    if horizontal.length() > 1.0:
+        horizontal = horizontal.normalized()
+
+    var direction := _camera_relative_direction(horizontal)
+
+    var wants_sprint := _button_down("run") or Input.is_key_pressed(KEY_SHIFT)
+    if wants_sprint and stamina > 0.0:
+        stamina = maxf(0.0, stamina - delta * 13.0)
+    else:
+        stamina = minf(100.0, stamina + delta * 10.0)
+    var move_speed := PLAYER_SPEED * (1.48 if wants_sprint and stamina > 0.0 else 1.0)
+    var target_horizontal_velocity := Vector2(direction.x, direction.z) * move_speed
+    player.velocity.x = move_toward(player.velocity.x, target_horizontal_velocity.x, 28.0 * delta)
+    player.velocity.z = move_toward(player.velocity.z, target_horizontal_velocity.y, 28.0 * delta)
 
     if not player.is_on_floor():
         player.velocity.y -= GRAVITY * delta
@@ -772,6 +4248,20 @@ func _physics_process(delta: float) -> void:
         player.velocity.y = 0.0
 
     player.move_and_slide()
+    var safe_limit := WORLD_SIZE * 0.48
+    var safe_position := player.global_position
+    var clamped_x := clampf(safe_position.x, -safe_limit, safe_limit)
+    var clamped_z := clampf(safe_position.z, -safe_limit, safe_limit)
+    if not is_equal_approx(clamped_x, safe_position.x) or not is_equal_approx(clamped_z, safe_position.z):
+        safe_position.x = clamped_x
+        safe_position.z = clamped_z
+        player.global_position = safe_position
+        player.velocity.x = 0.0
+        player.velocity.z = 0.0
+    if player.global_position.y < -18.0:
+        player.global_position = camp_position + Vector3(0.0, 1.3, 0.0)
+        player.velocity = Vector3.ZERO
+        _show_status_note("You returned safely to your campsite.")
     if direction.length_squared() > 0.01:
         var target_angle := atan2(-direction.x, -direction.z)
         player.rotation.y = lerp_angle(player.rotation.y, target_angle, delta * 10.0)
@@ -792,6 +4282,990 @@ func _update_character_animation(delta: float, is_moving: bool) -> void:
         right_leg.rotation.x = lerp_angle(right_leg.rotation.x, 0.0, delta * 8.0)
         left_arm.rotation.x = lerp_angle(left_arm.rotation.x, 0.0, delta * 8.0)
         right_arm.rotation.x = lerp_angle(right_arm.rotation.x, 0.0, delta * 8.0)
+
+
+func _set_network_status(message: String) -> void:
+    if network_status_label:
+        network_status_label.text = message
+    print("[WORLDS LAN] ", message)
+
+func _get_lan_ipv4() -> String:
+    for address in IP.get_local_addresses():
+        if address.contains(":") or address.begins_with("127.") or address.begins_with("169.254."):
+            continue
+        var octets := address.split(".")
+        if octets.size() != 4:
+            continue
+        var valid := true
+        for octet in octets:
+            if not octet.is_valid_int() or int(octet) < 0 or int(octet) > 255:
+                valid = false
+                break
+        if valid and (address.begins_with("192.168.") or address.begins_with("10.") or address.begins_with("172.")):
+            return address
+    return "Wi-Fi IP not detected"
+
+func _is_valid_ipv4(address: String) -> bool:
+    var octets := address.split(".")
+    if octets.size() != 4:
+        return false
+    for octet in octets:
+        if not octet.is_valid_int() or int(octet) < 0 or int(octet) > 255:
+            return false
+    return true
+
+func _host_lan_game() -> void:
+    _disconnect_lan_game()
+    var network_peer := ENetMultiplayerPeer.new()
+    var error := network_peer.create_server(LAN_PORT, LAN_MAX_CLIENTS)
+    if error != OK:
+        _set_network_status("Could not host  •  Error %d" % error)
+        return
+    multiplayer.multiplayer_peer = network_peer
+    lan_active = true
+    host_ip_label.text = "HOST IP: %s  •  UDP %d" % [_get_lan_ipv4(), LAN_PORT]
+    _set_network_status("World hosted  •  Ask your brother to enter this IP")
+
+func _join_lan_game() -> void:
+    var address := address_input.text.strip_edges()
+    if not _is_valid_ipv4(address):
+        _set_network_status("Enter a valid local IPv4 address first.")
+        return
+    _disconnect_lan_game()
+    var network_peer := ENetMultiplayerPeer.new()
+    var error := network_peer.create_client(address, LAN_PORT)
+    if error != OK:
+        _set_network_status("Could not start connection  •  Error %d" % error)
+        return
+    multiplayer.multiplayer_peer = network_peer
+    lan_active = true
+    _set_network_status("Connecting to %s..." % address)
+
+func _disconnect_lan_game() -> void:
+    lan_active = false
+    network_send_timer = 0.0
+    if multiplayer.multiplayer_peer:
+        multiplayer.multiplayer_peer.close()
+    multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+    for peer_id in network_remote_players.keys():
+        var avatar: Node3D = network_remote_players[peer_id]
+        if is_instance_valid(avatar):
+            avatar.queue_free()
+    network_remote_players.clear()
+    network_remote_targets.clear()
+    network_player_names = {1: player_name}
+    if network_status_label:
+        _set_network_status("Offline  •  Ready to host or join")
+
+func _on_peer_connected(peer_id: int) -> void:
+    if not multiplayer.is_server():
+        return
+    var spawn_position := Vector3(18.0, _height_at(18.0, 0.0) + 1.2, float(peer_id % 2) * 3.0 + 2.0)
+    _ensure_remote_player(peer_id, spawn_position, 0.0)
+    network_player_names[peer_id] = "PLAYER %d" % peer_id
+    rpc("_rpc_spawn_remote_player", peer_id, spawn_position, 0.0)
+    _set_network_status("Player connected  •  %d/8 players" % (multiplayer.get_peers().size() + 1))
+
+func _on_peer_disconnected(peer_id: int) -> void:
+    _remove_remote_player(peer_id)
+    network_player_names.erase(peer_id)
+    network_player_outfits.erase(peer_id)
+    if multiplayer.is_server():
+        rpc("_rpc_remove_remote_player", peer_id)
+    _set_network_status("Player left  •  %d/8 players" % (multiplayer.get_peers().size() + 1) if multiplayer.is_server() else "A player left the world")
+
+func _on_connected_to_server() -> void:
+    lan_active = true
+    _set_network_status("Connected  •  Synchronizing world...")
+    rpc_id(1, "_rpc_request_player_roster")
+    rpc_id(1, "_rpc_submit_player_name", player_name)
+    rpc_id(1, "_rpc_submit_player_outfit", player_outfit_index)
+    if OS.get_cmdline_user_args().has("--lan-smoke-client"):
+        get_tree().create_timer(1.2).timeout.connect(_move_lan_smoke_client)
+
+func _on_connection_failed() -> void:
+    _disconnect_lan_game()
+    _set_network_status("Connection failed  •  Check Wi-Fi and host IP")
+
+func _on_server_disconnected() -> void:
+    _disconnect_lan_game()
+    _set_network_status("Host disconnected  •  Session ended")
+    if OS.get_cmdline_user_args().has("--lan-smoke-client"):
+        if lan_smoke_client_passed:
+            print("LAN_SMOKE_CLIENT_EXIT_PASS")
+            get_tree().quit(0)
+        else:
+            push_error("LAN_SMOKE_CLIENT_EXIT_FAIL: host ended session before shared state passed")
+            get_tree().quit(1)
+
+func _create_remote_player_visual(peer_id: int, spawn_position: Vector3, facing: float) -> Node3D:
+    var avatar := Node3D.new()
+    avatar.name = "RemotePlayer_%d" % peer_id
+    avatar.position = spawn_position
+    avatar.rotation.y = facing
+
+    var body := MeshInstance3D.new()
+    body.name = "RemoteBody"
+    var body_mesh := CapsuleMesh.new()
+    body_mesh.radius = 0.34
+    body_mesh.height = 1.16
+    body.mesh = body_mesh
+    body.position.y = 1.16
+    var body_material := StandardMaterial3D.new()
+    body_material.albedo_color = _get_player_outfit_color(int(network_player_outfits.get(peer_id, peer_id % 4)))
+    body.material_override = body_material
+    avatar.add_child(body)
+
+    var head := MeshInstance3D.new()
+    var head_mesh := SphereMesh.new()
+    head_mesh.radius = 0.24
+    head_mesh.height = 0.48
+    head.mesh = head_mesh
+    head.position.y = 1.88
+    var head_material := StandardMaterial3D.new()
+    head_material.albedo_color = Color(0.66, 0.46, 0.32)
+    head.material_override = head_material
+    avatar.add_child(head)
+
+    var label := Label3D.new()
+    label.name = "PlayerNameLabel"
+    label.text = str(network_player_names.get(peer_id, "PLAYER %d" % peer_id))
+    label.position.y = 2.35
+    label.font_size = 30
+    label.pixel_size = 0.008
+    label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+    label.no_depth_test = true
+    avatar.add_child(label)
+
+    add_child(avatar)
+    return avatar
+
+func _ensure_remote_player(peer_id: int, spawn_position: Vector3, facing: float) -> void:
+    if peer_id == multiplayer.get_unique_id():
+        return
+    if not network_remote_players.has(peer_id) or not is_instance_valid(network_remote_players[peer_id]):
+        var avatar := _create_remote_player_visual(peer_id, spawn_position, facing)
+        network_remote_players[peer_id] = avatar
+    _set_remote_player_target(peer_id, spawn_position, facing)
+
+func _set_remote_player_target(peer_id: int, target_position: Vector3, facing: float) -> void:
+    network_remote_targets[peer_id] = {
+        "position": target_position,
+        "facing": facing
+    }
+
+func _remove_remote_player(peer_id: int) -> void:
+    if network_remote_players.has(peer_id):
+        var avatar: Node3D = network_remote_players[peer_id]
+        if is_instance_valid(avatar):
+            avatar.queue_free()
+    network_remote_players.erase(peer_id)
+    network_remote_targets.erase(peer_id)
+
+func _update_remote_players(delta: float) -> void:
+    for peer_id in network_remote_players.keys():
+        var avatar: Node3D = network_remote_players[peer_id]
+        if not is_instance_valid(avatar):
+            continue
+        if not network_remote_targets.has(peer_id):
+            continue
+        var target: Dictionary = network_remote_targets[peer_id]
+        var weight := clampf(delta * 12.0, 0.0, 1.0)
+        avatar.position = avatar.position.lerp(target["position"], weight)
+        avatar.rotation.y = lerp_angle(avatar.rotation.y, float(target["facing"]), weight)
+
+func _update_network(delta: float) -> void:
+    if not lan_active:
+        return
+    network_send_timer += delta
+    if network_send_timer >= NETWORK_SEND_INTERVAL:
+        network_send_timer = 0.0
+        _send_local_network_state()
+
+func _send_local_network_state() -> void:
+    if not lan_active:
+        return
+    if multiplayer.is_server():
+        if multiplayer.get_peers().is_empty():
+            return
+        rpc("_rpc_apply_remote_player_state", 1, player.global_position, player.rotation.y, world_clock)
+    elif multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+        rpc_id(1, "_rpc_receive_player_state", player.global_position, player.rotation.y)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_request_player_roster() -> void:
+    if not multiplayer.is_server():
+        return
+    var requester := multiplayer.get_remote_sender_id()
+    rpc_id(requester, "_rpc_spawn_remote_player", 1, player.global_position, player.rotation.y)
+    rpc_id(requester, "_rpc_set_remote_player_name", 1, player_name)
+    rpc_id(requester, "_rpc_set_remote_player_outfit", 1, player_outfit_index)
+    for peer_id in network_remote_players.keys():
+        if int(peer_id) == requester:
+            continue
+        var avatar: Node3D = network_remote_players[peer_id]
+        if is_instance_valid(avatar):
+            rpc_id(requester, "_rpc_spawn_remote_player", int(peer_id), avatar.global_position, avatar.rotation.y)
+            rpc_id(requester, "_rpc_set_remote_player_name", int(peer_id), str(network_player_names.get(peer_id, "PLAYER %d" % int(peer_id))))
+            rpc_id(requester, "_rpc_set_remote_player_outfit", int(peer_id), int(network_player_outfits.get(peer_id, 0)))
+    rpc_id(requester, "_rpc_set_shared_clock", world_clock)
+    rpc_id(requester, "_rpc_set_shared_inventory", shared_inventory)
+    for index in range(berry_bushes.size()):
+        var bush: Dictionary = berry_bushes[index]
+        rpc_id(requester, "_rpc_set_berry_servings", index, int(bush["servings"]))
+    for index in range(resource_nodes.size()):
+        var resource: Dictionary = resource_nodes[index]
+        rpc_id(requester, "_rpc_set_resource_amount", index, int(resource["amount"]))
+    for building in placed_buildings:
+        rpc_id(requester, "_rpc_spawn_building", str(building["type"]), building["position"], float(building["rotation"]))
+    if memory_awakened:
+        rpc_id(requester, "_rpc_world_memory_activated")
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_submit_player_name(requested_name: String) -> void:
+    if not multiplayer.is_server():
+        return
+    var sender := multiplayer.get_remote_sender_id()
+    if sender <= 1:
+        return
+    var clean_name := requested_name.strip_edges().substr(0, 18)
+    if clean_name.is_empty():
+        clean_name = "Wanderer"
+    network_player_names[sender] = clean_name
+    _rpc_set_remote_player_name(sender, clean_name)
+    rpc("_rpc_set_remote_player_name", sender, clean_name)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_remote_player_name(peer_id: int, display_name: String) -> void:
+    var clean_name := display_name.strip_edges().substr(0, 18)
+    if clean_name.is_empty():
+        clean_name = "Wanderer"
+    network_player_names[peer_id] = clean_name
+    if network_remote_players.has(peer_id):
+        var avatar := network_remote_players[peer_id] as Node3D
+        var name_label := avatar.find_child("PlayerNameLabel", true, false) as Label3D
+        if name_label:
+            name_label.text = clean_name
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_spawn_remote_player(peer_id: int, spawn_position: Vector3, facing: float) -> void:
+    _ensure_remote_player(peer_id, spawn_position, facing)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_remove_remote_player(peer_id: int) -> void:
+    _remove_remote_player(peer_id)
+
+@rpc("any_peer", "call_remote", "unreliable_ordered")
+func _rpc_receive_player_state(world_position: Vector3, facing: float) -> void:
+    if not multiplayer.is_server():
+        return
+    var sender := multiplayer.get_remote_sender_id()
+    if sender <= 1 or not network_remote_players.has(sender):
+        return
+    var safe_position := Vector3(
+        clampf(world_position.x, -WORLD_SIZE * 0.48, WORLD_SIZE * 0.48),
+        clampf(world_position.y, -10.0, 30.0),
+        clampf(world_position.z, -WORLD_SIZE * 0.48, WORLD_SIZE * 0.48)
+    )
+    _set_remote_player_target(sender, safe_position, facing)
+    for peer_id in multiplayer.get_peers():
+        if peer_id != sender:
+            rpc_id(peer_id, "_rpc_apply_remote_player_state", sender, safe_position, facing, world_clock)
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facing: float, synced_clock: float) -> void:
+    _ensure_remote_player(peer_id, world_position, facing)
+    _set_remote_player_target(peer_id, world_position, facing)
+    world_clock = fposmod(synced_clock, 24.0)
+
+
+
+
+func _start_gameplay_smoke_test() -> void:
+    _update_virtual_joystick(joystick_center + Vector2(0.0, -52.0))
+    var forward_input_test := _camera_relative_direction(joystick_vector)
+    if joystick_vector.y > -0.98 or forward_input_test.z > -0.90:
+        push_error("GAMEPLAY_SMOKE_FAIL: mobile joystick forward input did not map to forward movement")
+        get_tree().quit(1)
+        return
+    _reset_virtual_joystick()
+    _on_control_pressed("run")
+    if not _button_down("run"):
+        push_error("GAMEPLAY_SMOKE_FAIL: sprint button did not activate")
+        get_tree().quit(1)
+        return
+    _on_control_released("run")
+    if _button_down("run"):
+        push_error("GAMEPLAY_SMOKE_FAIL: sprint button did not release")
+        get_tree().quit(1)
+        return
+    if main_menu_layer == null or not main_menu_layer.visible or network_panel == null or network_panel.visible or settings_panel == null or settings_panel.visible or LAN_MAX_CLIENTS != 7 or outfit_option == null:
+        push_error("GAMEPLAY_SMOKE_FAIL: mobile menu, Wi-Fi panel defaults, or LAN capacity configuration is incorrect")
+        get_tree().quit(1)
+        return
+
+    _on_outfit_selected(2)
+    if player_outfit_index != 2 or not is_equal_approx((player_torso.material_override as StandardMaterial3D).albedo_color.r, _get_player_outfit_color(2).r):
+        push_error("GAMEPLAY_SMOKE_FAIL: explorer outfit selection did not update the player")
+        get_tree().quit(1)
+        return
+    if get_node_or_null("HUD/OpenMainMenu") == null:
+        push_error("GAMEPLAY_SMOKE_FAIL: in-game menu shortcut is missing")
+        get_tree().quit(1)
+        return
+    _open_multiplayer_from_menu()
+    if main_menu_layer.visible or not network_panel.visible or settings_panel.visible:
+        push_error("GAMEPLAY_SMOKE_FAIL: Wi-Fi menu navigation failed")
+        get_tree().quit(1)
+        return
+    _return_to_main_menu()
+    _open_settings_from_menu()
+    if main_menu_layer.visible or not settings_panel.visible or network_panel.visible:
+        push_error("GAMEPLAY_SMOKE_FAIL: settings menu navigation failed")
+        get_tree().quit(1)
+        return
+    _return_to_main_menu()
+    player.velocity = Vector3(3.0, 0.0, 0.0)
+    _physics_process(0.1)
+    if player.velocity.length_squared() > 0.001 or not _is_frontend_visible():
+        push_error("GAMEPLAY_SMOKE_FAIL: player movement was not paused behind menus")
+        get_tree().quit(1)
+        return
+
+    _close_main_menu()
+    var joystick_press := InputEventScreenTouch.new()
+    joystick_press.index = 41
+    joystick_press.position = joystick_center
+    joystick_press.pressed = true
+    _input(joystick_press)
+    var joystick_drag := InputEventScreenDrag.new()
+    joystick_drag.index = 41
+    joystick_drag.position = joystick_center + Vector2(0.0, -52.0)
+    joystick_drag.relative = Vector2(0.0, -52.0)
+    _input(joystick_drag)
+    if joystick_touch_index != 41 or joystick_vector.y > -0.90:
+        push_error("GAMEPLAY_SMOKE_FAIL: touch joystick did not capture and route a finger drag")
+        get_tree().quit(1)
+        return
+    _physics_process(0.1)
+    if player.velocity.z > -0.1:
+        push_error("GAMEPLAY_SMOKE_FAIL: player did not receive forward movement from the touch joystick")
+        get_tree().quit(1)
+        return
+    var joystick_release := InputEventScreenTouch.new()
+    joystick_release.index = 41
+    joystick_release.position = joystick_center + Vector2(0.0, -52.0)
+    joystick_release.pressed = false
+    _input(joystick_release)
+    if joystick_touch_index != -1 or joystick_vector.length_squared() > 0.001:
+        push_error("GAMEPLAY_SMOKE_FAIL: touch joystick did not reset on finger release")
+        get_tree().quit(1)
+        return
+
+    var run_button: TouchScreenButton = action_buttons["run"]
+    run_button.pressed.emit()
+    if not _button_down("run"):
+        push_error("GAMEPLAY_SMOKE_FAIL: run TouchScreenButton signal did not activate the gameplay action")
+        get_tree().quit(1)
+        return
+    run_button.released.emit()
+    if _button_down("run"):
+        push_error("GAMEPLAY_SMOKE_FAIL: run TouchScreenButton release signal did not clear the gameplay action")
+        get_tree().quit(1)
+        return
+
+    if resource_nodes.size() < 11 or wildlife_agents.size() < 27 or village_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null or survival_bars.size() != 4:
+        push_error("GAMEPLAY_SMOKE_FAIL: resources or crafting interface missing")
+        get_tree().quit(1)
+        return
+
+    var smoke_original_position := player.global_position
+    var smoke_original_building_count := placed_buildings.size()
+    var smoke_original_crossing_flag := journey_visited_crossing
+    player.global_position = river_crossing_position + Vector3(0.0, 1.2, 0.0)
+    placed_buildings.append({"type": "cabin"})
+    journey_visited_crossing = false
+    var crossing_objective := _get_journey_objective()
+    placed_buildings.resize(smoke_original_building_count)
+    journey_visited_crossing = smoke_original_crossing_flag
+    player.global_position = smoke_original_position
+    if not crossing_objective.contains("Find the river crossing") or not crossing_objective.contains("0 m away"):
+        push_error("GAMEPLAY_SMOKE_FAIL: journey objective distance guidance did not update")
+        get_tree().quit(1)
+        return
+
+    var first_animal_legs: Array = wildlife_agents[0].get("legs", [])
+    if first_animal_legs.size() != 4:
+        push_error("GAMEPLAY_SMOKE_FAIL: wildlife leg rig is incomplete")
+        get_tree().quit(1)
+        return
+
+    var wildlife_origin := Vector3(-42.0, 0.0, 20.0)
+    var wildlife_destination := _constrain_wildlife_target(Vector3(70.0, 0.0, 20.0), wildlife_origin)
+    var wildlife_river_center := sin(wildlife_destination.z * 0.018) * 18.0
+    if wildlife_destination.x < -135.0 or wildlife_destination.x > 135.0 or wildlife_destination.z < -145.0 or wildlife_destination.z > 145.0:
+        push_error("GAMEPLAY_SMOKE_FAIL: wildlife target escaped its habitat bounds")
+        get_tree().quit(1)
+        return
+    if absf(wildlife_destination.x - wildlife_river_center) < 9.9 or (wildlife_destination.x - wildlife_river_center) * (wildlife_origin.x - sin(wildlife_origin.z * 0.018) * 18.0) <= 0.0:
+        push_error("GAMEPLAY_SMOKE_FAIL: wildlife target crossed the river or entered deep water")
+        get_tree().quit(1)
+        return
+
+    for build_type in ["campfire", "storage", "shelter"]:
+        if not build_recipe_buttons.has(build_type) or not (build_recipe_buttons[build_type] as Button).disabled:
+            push_error("GAMEPLAY_SMOKE_FAIL: unaffordable recipe should be disabled")
+            get_tree().quit(1)
+            return
+
+    var test_resource: Dictionary = resource_nodes[0]
+    var test_resource_position: Vector3 = test_resource["position"]
+    player.global_position = test_resource_position + Vector3(0.0, 1.2, 0.0)
+    var interaction := _nearest_interaction_for(player.global_position)
+    if str(interaction.get("action", "")) != "gather" or int(interaction.get("index", -1)) != 0:
+        push_error("GAMEPLAY_SMOKE_FAIL: nearest resource interaction did not resolve")
+        get_tree().quit(1)
+        return
+
+    var stone_resource: Dictionary = resource_nodes[5]
+    var stone_position: Vector3 = stone_resource["position"]
+    for amount in range(3):
+        player.global_position = test_resource_position + Vector3(0.0, 1.2, 0.0)
+        _server_gather_resource(0, 1)
+    for amount in range(2):
+        player.global_position = stone_position + Vector3(0.0, 1.2, 0.0)
+        _server_gather_resource(5, 1)
+
+    if int(shared_inventory["wood"]) != 3 or int(shared_inventory["stone"]) != 2:
+        push_error("GAMEPLAY_SMOKE_FAIL: gathering did not update shared inventory")
+        get_tree().quit(1)
+        return
+    if (build_recipe_buttons["campfire"] as Button).disabled:
+        push_error("GAMEPLAY_SMOKE_FAIL: affordable campfire recipe remained disabled")
+        get_tree().quit(1)
+        return
+
+    if _get_build_recipe("cabin") != {"wood": 14, "stone": 6, "fiber": 6}:
+        push_error("GAMEPLAY_SMOKE_FAIL: cabin recipe is missing or incorrect")
+        get_tree().quit(1)
+        return
+    if get_node_or_null("Riverlight_Crossing") == null or get_node_or_null("River_Whisper_Pavilion") == null:
+        push_error("GAMEPLAY_SMOKE_FAIL: riverfront landmarks were not created")
+        get_tree().quit(1)
+        return
+    if village_agents.size() < 8 or _villager_dialogue(0).is_empty():
+        push_error("GAMEPLAY_SMOKE_FAIL: villager interaction content is missing")
+        get_tree().quit(1)
+        return
+    var animated_villager: Dictionary = village_agents[0]
+    var animated_arms: Array = animated_villager.get("arms", [])
+    var animated_legs: Array = animated_villager.get("legs", [])
+    if animated_arms.size() != 2 or animated_legs.size() != 2:
+        push_error("GAMEPLAY_SMOKE_FAIL: villager limb animation rig is incomplete")
+        get_tree().quit(1)
+        return
+    animated_villager["walking"] = true
+    animated_villager["phase"] = 0.0
+    village_agents[0] = animated_villager
+    _animate_villager_limbs(0.1)
+    if absf((animated_legs[0] as MeshInstance3D).rotation.x) < 0.01:
+        push_error("GAMEPLAY_SMOKE_FAIL: villager walking animation did not move its legs")
+        get_tree().quit(1)
+        return
+    if get_node_or_null("Valleywatch_Overlook") == null:
+        push_error("GAMEPLAY_SMOKE_FAIL: valley lookout landmark was not created")
+        get_tree().quit(1)
+        return
+    var first_villager_root: Node3D = village_agents[0]["root"]
+    var original_villager_position := first_villager_root.position
+    first_villager_root.position = Vector3(248.0, _height_at(248.0, 248.0), 248.0)
+    var villager_talk_test := _nearest_interaction_for(first_villager_root.global_position)
+    first_villager_root.position = original_villager_position
+    if str(villager_talk_test.get("action", "")) != "talk":
+        push_error("GAMEPLAY_SMOKE_FAIL: approaching a villager did not offer dialogue")
+        get_tree().quit(1)
+        return
+    var routine_home: Vector3 = village_agents[0]["home"]
+    var morning_routine := _villager_schedule_target(0, routine_home, 8.0)
+    var midday_routine := _villager_schedule_target(0, routine_home, 13.0)
+    var evening_routine := _villager_schedule_target(0, routine_home, 18.0)
+    var night_routine := _villager_schedule_target(0, routine_home, 23.0)
+    if _villager_schedule_slot(8.0) != 0 or Vector2(morning_routine.x + 82.0, morning_routine.z - 46.0).length() > 4.5:
+        push_error("GAMEPLAY_SMOKE_FAIL: villagers did not schedule a morning market visit")
+        get_tree().quit(1)
+        return
+    if _villager_schedule_slot(13.0) != 1 or Vector2(midday_routine.x + 82.0, midday_routine.z - 76.0).length() > 4.5:
+        push_error("GAMEPLAY_SMOKE_FAIL: villagers did not schedule a midday village visit")
+        get_tree().quit(1)
+        return
+    if _villager_schedule_slot(18.0) != 2 or Vector2(evening_routine.x - village_well_position.x, evening_routine.z - village_well_position.z).length() > 4.5:
+        push_error("GAMEPLAY_SMOKE_FAIL: villagers did not schedule an evening well visit")
+        get_tree().quit(1)
+        return
+    if _villager_schedule_slot(23.0) != 3 or night_routine.distance_to(routine_home) > 0.01:
+        push_error("GAMEPLAY_SMOKE_FAIL: villagers did not return home at night")
+        get_tree().quit(1)
+        return
+
+    if get_node_or_null("Village_Well") == null:
+        push_error("GAMEPLAY_SMOKE_FAIL: village well was not created")
+        get_tree().quit(1)
+        return
+    var well_test := _nearest_interaction_for(village_well_position + Vector3(0.0, 0.8, 0.0))
+    if str(well_test.get("action", "")) != "drink":
+        push_error("GAMEPLAY_SMOKE_FAIL: village well interaction did not resolve")
+        get_tree().quit(1)
+        return
+
+    var inventory_before_invalid_place := shared_inventory.duplicate(true)
+    var previous_build_count := placed_buildings.size()
+    _server_place_building("campfire", Vector3(0.0, _height_at(0.0, -4.0) + 1.2, -4.0), 0.0)
+    if placed_buildings.size() != previous_build_count or shared_inventory != inventory_before_invalid_place:
+        push_error("GAMEPLAY_SMOKE_FAIL: invalid river-side placement consumed materials")
+        get_tree().quit(1)
+        return
+
+    var test_build_position := Vector3(70.0, _height_at(70.0, 80.0) + 1.2, 80.0)
+    _server_place_building("campfire", test_build_position, 0.0, PI * 0.5)
+    if not is_equal_approx(float(placed_buildings.back()["rotation"]), PI * 0.5):
+        push_error("GAMEPLAY_SMOKE_FAIL: requested structure rotation was not preserved")
+        get_tree().quit(1)
+        return
+    if placed_buildings.size() != previous_build_count + 1:
+        push_error("GAMEPLAY_SMOKE_FAIL: campfire recipe or placement failed")
+        get_tree().quit(1)
+        return
+    if int(shared_inventory["wood"]) != 0 or int(shared_inventory["stone"]) != 0:
+        push_error("GAMEPLAY_SMOKE_FAIL: crafting did not consume recipe materials")
+        get_tree().quit(1)
+        return
+    if not (build_recipe_buttons["campfire"] as Button).disabled:
+        push_error("GAMEPLAY_SMOKE_FAIL: depleted campfire recipe remained enabled")
+        get_tree().quit(1)
+        return
+
+    var cabin_position := Vector3(-132.0, _height_at(-132.0, 116.0), 116.0)
+    _spawn_building_visual("cabin", cabin_position, 0.0, true)
+    if get_node_or_null("Built_cabin_01") == null or str(placed_buildings.back().get("type", "")) != "cabin":
+        push_error("GAMEPLAY_SMOKE_FAIL: cabin visual or placement record failed")
+        get_tree().quit(1)
+        return
+    var cabin_entry_test := _nearest_interaction_for(cabin_position)
+    if str(cabin_entry_test.get("action", "")) != "home":
+        push_error("GAMEPLAY_SMOKE_FAIL: cabin did not expose its rest interaction")
+        get_tree().quit(1)
+        return
+    if not _get_journey_objective().contains("crossing"):
+        push_error("GAMEPLAY_SMOKE_FAIL: journey objective did not advance to the river crossing after building a cabin")
+        get_tree().quit(1)
+        return
+    journey_visited_crossing = true
+    if not _get_journey_objective().contains("villager"):
+        push_error("GAMEPLAY_SMOKE_FAIL: visiting the crossing did not advance the journey")
+        get_tree().quit(1)
+        return
+    journey_met_villager = true
+    if not _get_journey_objective().contains("memory stone"):
+        push_error("GAMEPLAY_SMOKE_FAIL: meeting a villager did not reveal the memory objective")
+        get_tree().quit(1)
+        return
+    memory_awakened = true
+    if not _get_journey_objective().contains("glowing memory trail"):
+        push_error("GAMEPLAY_SMOKE_FAIL: awakening memory did not reveal the trail objective")
+        get_tree().quit(1)
+        return
+
+    var stamina_before_save := stamina
+    stamina = 61.25
+    _save_game()
+    var saved := ConfigFile.new()
+    if saved.load(SAVE_PATH) != OK:
+        push_error("GAMEPLAY_SMOKE_FAIL: save file could not be reopened")
+        get_tree().quit(1)
+        return
+    var saved_inventory: Variant = saved.get_value("world", "shared_inventory", {})
+    var saved_buildings: Variant = saved.get_value("world", "placed_buildings", [])
+    var saved_stamina: float = float(saved.get_value("player", "stamina", -1.0))
+    var saved_outfit: int = int(saved.get_value("player", "outfit_index", -1))
+    var saved_crossing: bool = bool(saved.get_value("world", "journey_visited_crossing", false))
+    var saved_villager: bool = bool(saved.get_value("world", "journey_met_villager", false))
+    if saved_outfit != 2:
+        push_error("GAMEPLAY_SMOKE_FAIL: selected explorer outfit was not persisted")
+        get_tree().quit(1)
+        return
+    if not is_equal_approx(saved_stamina, 61.25):
+        push_error("GAMEPLAY_SMOKE_FAIL: sprint stamina was not persisted")
+        get_tree().quit(1)
+        return
+    if not saved_crossing or not saved_villager:
+        push_error("GAMEPLAY_SMOKE_FAIL: journey milestones were not persisted")
+        get_tree().quit(1)
+        return
+    stamina = stamina_before_save
+    var saved_resources: Variant = saved.get_value("world", "resource_amounts", [])
+    if not (saved_inventory is Dictionary) or int(saved_inventory.get("wood", -1)) != 0:
+        push_error("GAMEPLAY_SMOKE_FAIL: inventory was not persisted")
+        get_tree().quit(1)
+        return
+    if not (saved_buildings is Array) or saved_buildings.size() != placed_buildings.size():
+        push_error("GAMEPLAY_SMOKE_FAIL: placed structures were not persisted")
+        get_tree().quit(1)
+        return
+    if not (saved_buildings[1] is Dictionary) or str(saved_buildings[1].get("type", "")) != "cabin":
+        push_error("GAMEPLAY_SMOKE_FAIL: cabin was not persisted")
+        get_tree().quit(1)
+        return
+    if not (saved_resources is Array) or int(saved_resources[0]) != 1:
+        push_error("GAMEPLAY_SMOKE_FAIL: depleted resource state was not persisted")
+        get_tree().quit(1)
+        return
+
+    print("GAMEPLAY_SMOKE_PASS  •  gathering, recipes, placement, and persistence")
+    get_tree().quit(0)
+
+func _request_lan_smoke_gather() -> void:
+    if not lan_active or multiplayer.is_server():
+        return
+    _try_interact()
+    print("LAN_SMOKE_CLIENT_REQUESTED_GATHER")
+
+func _start_lan_smoke_host() -> void:
+    _host_lan_game()
+    if not lan_active:
+        push_error("LAN_SMOKE_HOST_FAIL: host could not bind UDP port")
+        get_tree().quit(1)
+        return
+    print("LAN_SMOKE_HOST_READY")
+    get_tree().create_timer(12.0).timeout.connect(_finish_lan_smoke_host)
+
+func _start_lan_smoke_client() -> void:
+    player_name = "LAN Friend"
+    if player_name_input:
+        player_name_input.text = player_name
+    _on_outfit_selected(3)
+    address_input.text = "127.0.0.1"
+    _join_lan_game()
+    if not lan_active:
+        push_error("LAN_SMOKE_CLIENT_FAIL: client could not start")
+        get_tree().quit(1)
+        return
+    print("LAN_SMOKE_CLIENT_STARTED")
+    get_tree().create_timer(8.0).timeout.connect(_finish_lan_smoke_client)
+
+func _move_lan_smoke_client() -> void:
+    if not lan_active or multiplayer.is_server():
+        return
+    player.global_position = Vector3(31.0, _height_at(31.0, -11.0) + 1.2, -11.0)
+    print("LAN_SMOKE_CLIENT_MOVED")
+    get_tree().create_timer(0.3).timeout.connect(_request_lan_smoke_gather)
+
+func _finish_lan_smoke_client() -> void:
+    var inventory_synced := int(shared_inventory.get("wood", 0)) >= 1
+    var resource_synced := resource_nodes.size() > 0 and int(resource_nodes[0]["amount"]) == 3
+    var host_avatar_seen := network_remote_players.has(1)
+    var host_name_synced := str(network_player_names.get(1, "")).strip_edges() != ""
+    print("LAN_SMOKE_CLIENT_STATE  •  connected %s  •  host avatar %s  •  wood %d  •  resource amount %d" % [
+        str(lan_active and multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED),
+        str(host_avatar_seen),
+        int(shared_inventory.get("wood", 0)),
+        int(resource_nodes[0]["amount"]) if resource_nodes.size() > 0 else -1
+    ])
+    if lan_active and multiplayer.get_unique_id() > 1 and host_avatar_seen and host_name_synced and inventory_synced and resource_synced:
+        lan_smoke_client_passed = true
+        print("LAN_SMOKE_CLIENT_PASS  •  shared gathering state synchronized")
+    else:
+        push_error("LAN_SMOKE_CLIENT_FAIL: shared gather state not synchronized; keeping connection open for host diagnostics")
+
+func _finish_lan_smoke_host() -> void:
+    if OS.get_cmdline_user_args().has("--lan-smoke-host"):
+        print("LAN_SMOKE_HOST_STATE  •  peers %d  •  wood %d  •  resource amount %d" % [
+            multiplayer.get_peers().size(),
+            int(shared_inventory.get("wood", 0)),
+            int(resource_nodes[0]["amount"]) if resource_nodes.size() > 0 else -1
+        ])
+    var peers := multiplayer.get_peers()
+    if peers.size() != 1:
+        push_error("LAN_SMOKE_HOST_FAIL: expected one connected client, got %d" % peers.size())
+        get_tree().quit(1)
+        return
+    var remote_id: int = peers[0]
+    if not network_remote_players.has(remote_id):
+        push_error("LAN_SMOKE_HOST_FAIL: remote avatar was not created")
+        get_tree().quit(1)
+        return
+    var remote_avatar: Node3D = network_remote_players[remote_id]
+    if str(network_player_names.get(remote_id, "")) != "LAN Friend":
+        push_error("LAN_SMOKE_HOST_FAIL: remote player display name did not synchronize")
+        get_tree().quit(1)
+        return
+    if int(network_player_outfits.get(remote_id, -1)) != 3:
+        push_error("LAN_SMOKE_HOST_FAIL: explorer outfit did not synchronize")
+        get_tree().quit(1)
+        return
+    var remote_body := remote_avatar.find_child("RemoteBody", true, false) as MeshInstance3D
+    if remote_body == null or remote_body.material_override == null or not is_equal_approx((remote_body.material_override as StandardMaterial3D).albedo_color.b, _get_player_outfit_color(3).b):
+        push_error("LAN_SMOKE_HOST_FAIL: remote avatar outfit color was not applied")
+        get_tree().quit(1)
+        return
+    var remote_name_label := remote_avatar.find_child("PlayerNameLabel", true, false) as Label3D
+    if remote_name_label == null or remote_name_label.text != "LAN Friend":
+        push_error("LAN_SMOKE_HOST_FAIL: remote avatar name label did not update")
+        get_tree().quit(1)
+        return
+    if int(shared_inventory.get("wood", 0)) < 1 or int(resource_nodes[0]["amount"]) != 3:
+        push_error("LAN_SMOKE_HOST_FAIL: gathered resource was not applied by host")
+        get_tree().quit(1)
+        return
+    var moved_distance := Vector2(remote_avatar.position.x - 18.0, remote_avatar.position.z - 2.0).length()
+    if moved_distance < 2.0:
+        push_error("LAN_SMOKE_HOST_FAIL: player movement did not synchronize (%.2f)" % moved_distance)
+        get_tree().quit(1)
+        return
+    print("LAN_SMOKE_HOST_PASS  •  remote displacement %.2f" % moved_distance)
+    _disconnect_lan_game()
+    get_tree().quit(0)
+
+func _save_game() -> void:
+    if not player:
+        return
+    var config := ConfigFile.new()
+    config.set_value("world", "clock", world_clock)
+    config.set_value("world", "memory_awakened", memory_awakened)
+    config.set_value("world", "journey_visited_crossing", journey_visited_crossing)
+    config.set_value("world", "journey_met_villager", journey_met_villager)
+    config.set_value("world", "journey_visited_crossing", journey_visited_crossing)
+    config.set_value("world", "journey_met_villager", journey_met_villager)
+    config.set_value("player", "name", player_name)
+    config.set_value("player", "outfit_index", player_outfit_index)
+    config.set_value("player", "health", health)
+    config.set_value("player", "hunger", hunger)
+    config.set_value("player", "thirst", thirst)
+    config.set_value("player", "rest", rest)
+    config.set_value("player", "stamina", stamina)
+    config.set_value("player", "position", player.global_position)
+    config.set_value("controls", "camera_sensitivity", camera_sensitivity)
+    config.set_value("controls", "camera_distance", camera_distance)
+    config.set_value("controls", "camera_fov", camera_fov)
+    config.set_value("controls", "button_opacity", button_opacity)
+    config.set_value("controls", "button_scale", control_scale)
+    config.set_value("settings", "quality_index", quality_index)
+    config.set_value("settings", "fps_target", current_fps_target)
+    config.set_value("settings", "master_volume", master_volume_slider.value if master_volume_slider else 1.0)
+    for action in action_buttons:
+        var button: TouchScreenButton = action_buttons[action]
+        config.set_value("controls", str(action), button.position)
+
+    var berry_servings: Array[int] = []
+    for bush in berry_bushes:
+        berry_servings.append(int(bush["servings"]))
+    config.set_value("world", "berry_servings", berry_servings)
+
+    var resource_amounts: Array[int] = []
+    for resource in resource_nodes:
+        resource_amounts.append(int(resource["amount"]))
+    config.set_value("world", "resource_amounts", resource_amounts)
+    config.set_value("world", "shared_inventory", shared_inventory)
+    config.set_value("world", "placed_buildings", placed_buildings)
+
+    var error := config.save(SAVE_PATH)
+    if error == OK:
+        save_elapsed = 0.0
+    else:
+        push_warning("Could not save WORLDS progress. Error: %d" % error)
+
+func _load_game() -> void:
+    if not player:
+        return
+    var config := ConfigFile.new()
+    if config.load(SAVE_PATH) != OK:
+        return
+
+    player_name = str(config.get_value("player", "name", player_name)).strip_edges()
+    player_outfit_index = clampi(int(config.get_value("player", "outfit_index", player_outfit_index)), 0, 3)
+    _apply_player_outfit()
+    if outfit_option:
+        outfit_option.select(player_outfit_index)
+    if player_name.is_empty():
+        player_name = "Wanderer"
+    if player_name_input:
+        player_name_input.text = player_name
+    if main_menu_layer:
+        var menu_welcome := main_menu_layer.find_child("MenuWelcome", true, false) as Label
+        if menu_welcome:
+            menu_welcome.text = "مرحباً، %s" % player_name
+    quality_index = clampi(int(config.get_value("settings", "quality_index", quality_index)), 0, 4)
+    current_fps_target = clampi(int(config.get_value("settings", "fps_target", current_fps_target)), 20, 120)
+    var allowed_fps := [20, 30, 45, 60, 90, 120]
+    if not allowed_fps.has(current_fps_target):
+        current_fps_target = 60
+    Engine.max_fps = current_fps_target
+    var saved_volume := clampf(float(config.get_value("settings", "master_volume", 1.0)), 0.0, 1.0)
+    _on_master_volume_changed(saved_volume)
+    if master_volume_slider:
+        master_volume_slider.value = saved_volume
+    if quality_option:
+        quality_option.select(quality_index)
+    if fps_option:
+        for fps_index in range(fps_option.item_count):
+            if fps_option.get_item_id(fps_index) == current_fps_target:
+                fps_option.select(fps_index)
+                break
+    world_clock = fposmod(float(config.get_value("world", "clock", world_clock)), 24.0)
+    journey_visited_crossing = bool(config.get_value("world", "journey_visited_crossing", journey_visited_crossing))
+    journey_met_villager = bool(config.get_value("world", "journey_met_villager", journey_met_villager))
+    health = clampf(float(config.get_value("player", "health", health)), 0.0, 100.0)
+    hunger = clampf(float(config.get_value("player", "hunger", hunger)), 0.0, 100.0)
+    thirst = clampf(float(config.get_value("player", "thirst", thirst)), 0.0, 100.0)
+    if health_bar:
+        health_bar.value = health
+    rest = clampf(float(config.get_value("player", "rest", rest)), 0.0, 100.0)
+    stamina = clampf(float(config.get_value("player", "stamina", stamina)), 0.0, 100.0)
+    camera_sensitivity = clampf(float(config.get_value("controls", "camera_sensitivity", camera_sensitivity)), 0.003, 0.012)
+    camera_distance = clampf(float(config.get_value("controls", "camera_distance", camera_distance)), 4.0, 12.0)
+    camera_fov = clampf(float(config.get_value("controls", "camera_fov", camera_fov)), 55.0, 85.0)
+    button_opacity = clampf(float(config.get_value("controls", "button_opacity", button_opacity)), 0.4, 1.0)
+    _on_camera_distance_changed(camera_distance)
+    _on_camera_fov_changed(camera_fov)
+    _on_button_opacity_changed(button_opacity)
+    control_scale = clampf(float(config.get_value("controls", "button_scale", control_scale)), 0.75, 1.35)
+    _on_control_scale_changed(control_scale)
+    for action in action_buttons:
+        var saved_control_position: Variant = config.get_value("controls", str(action), action_buttons[action].position)
+        if typeof(saved_control_position) == TYPE_VECTOR2:
+            _move_action_button(str(action), saved_control_position)
+
+    var saved_position: Variant = config.get_value("player", "position", player.global_position)
+    if typeof(saved_position) == TYPE_VECTOR3:
+        var restored_position: Vector3 = saved_position
+        restored_position.x = clampf(restored_position.x, -WORLD_SIZE * 0.48, WORLD_SIZE * 0.48)
+        restored_position.z = clampf(restored_position.z, -WORLD_SIZE * 0.48, WORLD_SIZE * 0.48)
+        restored_position.y = _height_at(restored_position.x, restored_position.z) + 1.2
+        player.global_position = restored_position
+
+    var saved_berries: Variant = config.get_value("world", "berry_servings", [])
+    if saved_berries is Array:
+        for index in range(mini(saved_berries.size(), berry_bushes.size())):
+            var bush: Dictionary = berry_bushes[index]
+            bush["servings"] = clampi(int(saved_berries[index]), 0, 3)
+            berry_bushes[index] = bush
+
+    var saved_inventory: Variant = config.get_value("world", "shared_inventory", {})
+    if saved_inventory is Dictionary:
+        for key in ["wood", "stone", "fiber"]:
+            shared_inventory[key] = maxi(0, int(saved_inventory.get(key, 0)))
+    _update_inventory_ui()
+
+    var saved_resources: Variant = config.get_value("world", "resource_amounts", [])
+    if saved_resources is Array:
+        for index in range(mini(saved_resources.size(), resource_nodes.size())):
+            _set_resource_amount_local(index, int(saved_resources[index]))
+
+    var saved_buildings: Variant = config.get_value("world", "placed_buildings", [])
+    if saved_buildings is Array:
+        for building in saved_buildings:
+            if not (building is Dictionary):
+                continue
+            var build_type := str(building.get("type", ""))
+            var build_position: Variant = building.get("position", Vector3.ZERO)
+            var build_facing := float(building.get("rotation", 0.0))
+            if build_type in ["campfire", "storage", "shelter", "cabin"] and typeof(build_position) == TYPE_VECTOR3:
+                _spawn_building_visual(build_type, build_position, build_facing, true)
+
+    if bool(config.get_value("world", "memory_awakened", false)):
+        _apply_world_memory()
+    save_elapsed = 0.0
+
+func _on_quality_selected(index: int) -> void:
+    _apply_quality_preset(index)
+
+func _apply_quality_preset(index: int) -> void:
+    quality_index = index
+    var density := 0.74
+    var shadows := false
+    var fog_enabled := true
+    match index:
+        0: # Auto favors stable frame pacing on Android; PC can retain more scene density.
+            density = 0.62 if OS.get_name() == "Android" else (0.70 if OS.get_processor_count() <= 4 else 0.82)
+            shadows = false
+            fog_enabled = true
+        1: # Low
+            density = 0.48
+            shadows = false
+            fog_enabled = false
+        2: # Balanced
+            density = 0.72
+            shadows = false
+            fog_enabled = true
+        3: # High
+            density = 0.90
+            shadows = true
+            fog_enabled = true
+        4: # Ultra
+            density = 1.0
+            shadows = true
+            fog_enabled = true
+
+    _set_tree_density(density)
+    if sun_light:
+        sun_light.shadow_enabled = shadows
+    if world_environment:
+        world_environment.fog_enabled = fog_enabled
+        world_environment.fog_density = 0.0024 if fog_enabled else 0.0
+
+func _set_tree_density(density: float) -> void:
+    current_tree_density = clampf(density, 0.35, 1.0)
+    if total_tree_instances <= 0:
+        return
+    var visible_count := clampi(roundi(float(total_tree_instances) * current_tree_density), 1, total_tree_instances)
+    if tree_trunks and tree_trunks.multimesh:
+        tree_trunks.multimesh.visible_instance_count = visible_count
+    if tree_canopies and tree_canopies.multimesh:
+        tree_canopies.multimesh.visible_instance_count = visible_count * 3
+    var visible_pines := clampi(roundi(float(total_pine_instances) * current_tree_density), 1, maxi(1, total_pine_instances))
+    if pine_trunks and pine_trunks.multimesh:
+        pine_trunks.multimesh.visible_instance_count = visible_pines
+    if pine_canopies and pine_canopies.multimesh:
+        pine_canopies.multimesh.visible_instance_count = visible_pines
+    if grass_field and grass_field.multimesh:
+        grass_field.multimesh.visible_instance_count = clampi(roundi(float(total_grass_instances) * current_tree_density), 1, total_grass_instances)
+    if rock_field and rock_field.multimesh:
+        rock_field.multimesh.visible_instance_count = clampi(roundi(float(total_rock_instances) * current_tree_density), 1, total_rock_instances)
+func _on_fps_selected(index: int) -> void:
+    current_fps_target = fps_option.get_item_id(index)
+    Engine.max_fps = current_fps_target
+    if fps_label:
+        fps_label.text = "حد الإطارات: %d  •  قد يكون الهاتف أقل" % current_fps_target
+
+func _update_adaptive_quality(delta: float) -> void:
+    if quality_index != 0:
+        return
+    adaptive_check_timer += delta
+    if adaptive_check_timer < 3.0:
+        return
+    adaptive_check_timer = 0.0
+
+    var actual_fps := Engine.get_frames_per_second()
+    var next_density := current_tree_density
+    if actual_fps > 0 and actual_fps < float(current_fps_target) * 0.88:
+        next_density = maxf(0.40, current_tree_density - 0.06)
+        if sun_light:
+            sun_light.shadow_enabled = false
+        if world_environment:
+            world_environment.fog_enabled = false
+    elif actual_fps >= float(current_fps_target) * 0.97:
+        next_density = minf(0.76 if OS.get_name() == "Android" else 0.90, current_tree_density + 0.02)
+        if world_environment and quality_index == 0:
+            world_environment.fog_enabled = true
+
+    if not is_equal_approx(next_density, current_tree_density):
+        _set_tree_density(next_density)
+    if fps_label:
+        fps_label.text = "تلقائي  •  %d إطار  •  كثافة الأشجار %d%%" % [
+            actual_fps,
+            roundi(current_tree_density * 100.0)
+        ]
 
 func _button_down(action: String) -> bool:
     return pressed_actions.has(action)
