@@ -3931,6 +3931,16 @@ func _start_gameplay_smoke_test() -> void:
         push_error("GAMEPLAY_SMOKE_FAIL: journey objective did not advance to the river crossing after building a cabin")
         get_tree().quit(1)
         return
+    journey_visited_crossing = true
+    if not _get_journey_objective().contains("villager"):
+        push_error("GAMEPLAY_SMOKE_FAIL: visiting the crossing did not advance the journey")
+        get_tree().quit(1)
+        return
+    journey_met_villager = true
+    if not _get_journey_objective().contains("freely"):
+        push_error("GAMEPLAY_SMOKE_FAIL: meeting a villager did not complete the starter journey")
+        get_tree().quit(1)
+        return
 
     var stamina_before_save := stamina
     stamina = 61.25
