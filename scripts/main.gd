@@ -7,7 +7,7 @@ const GRAVITY := 22.0
 const JUMP_VELOCITY := 8.0
 const CAMERA_DRAG_SENSITIVITY := 0.006
 const LAN_PORT := 24560
-const LAN_MAX_CLIENTS := 1
+const LAN_MAX_CLIENTS := 7
 const NETWORK_SEND_INTERVAL := 0.05
 const SAVE_PATH := "user://worlds_save.cfg"
 
@@ -86,6 +86,7 @@ var lan_active := false
 var network_send_timer := 0.0
 var network_remote_players: Dictionary = {}
 var network_remote_targets: Dictionary = {}
+var network_player_names: Dictionary = {1: "Wanderer"}
 var memory_crystal: MeshInstance3D
 var save_elapsed := 0.0
 var quality_index := 0
@@ -1378,7 +1379,7 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     network_panel.add_child(column)
 
     var title := Label.new()
-    title.text = "WORLDS  •  PLAY TOGETHER"
+    title.text = "WORLDS  •  MOBILE MULTIPLAYER"
     title.add_theme_color_override("font_color", Color(0.75, 0.92, 0.78))
     title.add_theme_font_size_override("font_size", 17)
     column.add_child(title)
@@ -1413,7 +1414,7 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     column.add_child(host_ip_label)
 
     address_input = LineEdit.new()
-    address_input.placeholder_text = "Enter your brother's IP"
+    address_input.placeholder_text = "Enter host phone IP (same Wi-Fi)"
     address_input.virtual_keyboard_enabled = true
     address_input.clear_button_enabled = true
     column.add_child(address_input)
@@ -1430,7 +1431,7 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     column.add_child(leave_button)
 
     network_status_label = Label.new()
-    network_status_label.text = "Offline • Both phones must use the same Wi-Fi"
+    network_status_label.text = "Phone-to-phone Wi-Fi • Host creates, friend joins"
     network_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(network_status_label)
     network_panel.visible = false
@@ -3920,11 +3921,13 @@ func _on_peer_connected(peer_id: int) -> void:
         return
     var spawn_position := Vector3(18.0, _height_at(18.0, 0.0) + 1.2, float(peer_id % 2) * 3.0 + 2.0)
     _ensure_remote_player(peer_id, spawn_position, 0.0)
+    network_player_names[peer_id] = "PLAYER %d" % peer_id
     rpc("_rpc_spawn_remote_player", peer_id, spawn_position, 0.0)
     _set_network_status("Player connected  •  Waiting for first movement")
 
 func _on_peer_disconnected(peer_id: int) -> void:
     _remove_remote_player(peer_id)
+    network_player_names.erase(peer_id)
     if multiplayer.is_server():
         rpc("_rpc_remove_remote_player", peer_id)
     _set_network_status("A player left the world")
@@ -3933,6 +3936,7 @@ func _on_connected_to_server() -> void:
     lan_active = true
     _set_network_status("Connected  •  Synchronizing world...")
     rpc_id(1, "_rpc_request_player_roster")
+    rpc_id(1, "_rpc_submit_player_name", player_name)
     if OS.get_cmdline_user_args().has("--lan-smoke-client"):
         get_tree().create_timer(1.2).timeout.connect(_move_lan_smoke_client)
 
@@ -3980,7 +3984,8 @@ func _create_remote_player_visual(peer_id: int, spawn_position: Vector3, facing:
     avatar.add_child(head)
 
     var label := Label3D.new()
-    label.text = "PLAYER %d" % peer_id
+    label.name = "PlayerNameLabel"
+    label.text = str(network_player_names.get(peer_id, "PLAYER %d" % peer_id))
     label.position.y = 2.35
     label.font_size = 30
     label.pixel_size = 0.008
@@ -4049,12 +4054,14 @@ func _rpc_request_player_roster() -> void:
         return
     var requester := multiplayer.get_remote_sender_id()
     rpc_id(requester, "_rpc_spawn_remote_player", 1, player.global_position, player.rotation.y)
+    rpc_id(requester, "_rpc_set_remote_player_name", 1, player_name)
     for peer_id in network_remote_players.keys():
         if int(peer_id) == requester:
             continue
         var avatar: Node3D = network_remote_players[peer_id]
         if is_instance_valid(avatar):
             rpc_id(requester, "_rpc_spawn_remote_player", int(peer_id), avatar.global_position, avatar.rotation.y)
+            rpc_id(requester, "_rpc_set_remote_player_name", int(peer_id), str(network_player_names.get(peer_id, "PLAYER %d" % int(peer_id))))
     rpc_id(requester, "_rpc_set_shared_clock", world_clock)
     rpc_id(requester, "_rpc_set_shared_inventory", shared_inventory)
     for index in range(berry_bushes.size()):
@@ -4067,6 +4074,33 @@ func _rpc_request_player_roster() -> void:
         rpc_id(requester, "_rpc_spawn_building", str(building["type"]), building["position"], float(building["rotation"]))
     if memory_awakened:
         rpc_id(requester, "_rpc_world_memory_activated")
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_submit_player_name(requested_name: String) -> void:
+    if not multiplayer.is_server():
+        return
+    var sender := multiplayer.get_remote_sender_id()
+    if sender <= 1:
+        return
+    var clean_name := requested_name.strip_edges().substr(0, 18)
+    if clean_name.is_empty():
+        clean_name = "Wanderer"
+    network_player_names[sender] = clean_name
+    rpc("_rpc_set_remote_player_name", sender, clean_name)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_remote_player_name(peer_id: int, display_name: String) -> void:
+    var clean_name := display_name.strip_edges().substr(0, 18)
+    if clean_name.is_empty():
+        clean_name = "Wanderer"
+    network_player_names[peer_id] = clean_name
+    if network_remote_players.has(peer_id):
+        var avatar := network_remote_players[peer_id] as Node3D
+        var name_label := avatar.find_child("PlayerNameLabel", true, false) as Label3D
+        if name_label:
+            name_label.text = clean_name
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_spawn_remote_player(peer_id: int, spawn_position: Vector3, facing: float) -> void:
