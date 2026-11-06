@@ -1797,7 +1797,11 @@ func _get_journey_objective() -> String:
         if int(shared_inventory.get("fiber", 0)) < 6:
             return "JOURNEY  •  Gather %d more fiber" % (6 - int(shared_inventory.get("fiber", 0)))
         return "JOURNEY  •  Open BUILD and place your timber cabin"
-    return "JOURNEY  •  Explore the river crossing and meet the villagers"
+    if not journey_visited_crossing:
+        return "JOURNEY  •  Find the river crossing"
+    if not journey_met_villager:
+        return "JOURNEY  •  Talk to a villager"
+    return "JOURNEY  •  Explore freely"
 
 func _get_interaction_prompt() -> String:
     match _nearest_interaction():
