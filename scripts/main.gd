@@ -137,7 +137,9 @@ func _ready() -> void:
     _apply_quality_preset(0)
     Engine.max_fps = current_fps_target
     var command_args := OS.get_cmdline_user_args()
-    if command_args.has("--lan-smoke-host"):
+    if command_args.has("--gameplay-smoke"):
+        call_deferred("_start_gameplay_smoke_test")
+    elif command_args.has("--lan-smoke-host"):
         call_deferred("_start_lan_smoke_host")
     elif command_args.has("--lan-smoke-client"):
         call_deferred("_start_lan_smoke_client")
@@ -1302,6 +1304,17 @@ func _server_gather_resource(index: int, requester_id: int) -> void:
     if index < 0 or index >= resource_nodes.size():
         return
     var resource: Dictionary = resource_nodes[index]
+    var actor_position := player.global_position
+    if lan_active and multiplayer.is_server() and requester_id > 1:
+        if not network_remote_players.has(requester_id):
+            return
+        var remote_avatar: Node3D = network_remote_players[requester_id]
+        if not is_instance_valid(remote_avatar):
+            return
+        actor_position = remote_avatar.global_position
+    var resource_position: Vector3 = resource["position"]
+    if Vector2(actor_position.x - resource_position.x, actor_position.z - resource_position.z).length() > 3.7:
+        return
     var remaining := int(resource["amount"])
     if remaining <= 0:
         return
@@ -2271,6 +2284,78 @@ func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facin
 
 
 
+func _start_gameplay_smoke_test() -> void:
+    if resource_nodes.size() < 11 or build_panel == null:
+        push_error("GAMEPLAY_SMOKE_FAIL: resources or crafting interface missing")
+        get_tree().quit(1)
+        return
+
+    var test_resource: Dictionary = resource_nodes[0]
+    var test_resource_position: Vector3 = test_resource["position"]
+    player.global_position = test_resource_position + Vector3(0.0, 1.2, 0.0)
+    var interaction := _nearest_interaction_for(player.global_position)
+    if str(interaction.get("action", "")) != "gather" or int(interaction.get("index", -1)) != 0:
+        push_error("GAMEPLAY_SMOKE_FAIL: nearest resource interaction did not resolve")
+        get_tree().quit(1)
+        return
+
+    var stone_resource: Dictionary = resource_nodes[5]
+    var stone_position: Vector3 = stone_resource["position"]
+    for amount in range(3):
+        player.global_position = test_resource_position + Vector3(0.0, 1.2, 0.0)
+        _server_gather_resource(0, 1)
+    for amount in range(2):
+        player.global_position = stone_position + Vector3(0.0, 1.2, 0.0)
+        _server_gather_resource(5, 1)
+
+    if int(shared_inventory["wood"]) != 3 or int(shared_inventory["stone"]) != 2:
+        push_error("GAMEPLAY_SMOKE_FAIL: gathering did not update shared inventory")
+        get_tree().quit(1)
+        return
+
+    var test_build_position := Vector3(70.0, _height_at(70.0, 80.0) + 1.2, 80.0)
+    var previous_build_count := placed_buildings.size()
+    _server_place_building("campfire", test_build_position, 0.0)
+    if placed_buildings.size() != previous_build_count + 1:
+        push_error("GAMEPLAY_SMOKE_FAIL: campfire recipe or placement failed")
+        get_tree().quit(1)
+        return
+    if int(shared_inventory["wood"]) != 0 or int(shared_inventory["stone"]) != 0:
+        push_error("GAMEPLAY_SMOKE_FAIL: crafting did not consume recipe materials")
+        get_tree().quit(1)
+        return
+
+    _save_game()
+    var saved := ConfigFile.new()
+    if saved.load(SAVE_PATH) != OK:
+        push_error("GAMEPLAY_SMOKE_FAIL: save file could not be reopened")
+        get_tree().quit(1)
+        return
+    var saved_inventory: Variant = saved.get_value("world", "shared_inventory", {})
+    var saved_buildings: Variant = saved.get_value("world", "placed_buildings", [])
+    var saved_resources: Variant = saved.get_value("world", "resource_amounts", [])
+    if not (saved_inventory is Dictionary) or int(saved_inventory.get("wood", -1)) != 0:
+        push_error("GAMEPLAY_SMOKE_FAIL: inventory was not persisted")
+        get_tree().quit(1)
+        return
+    if not (saved_buildings is Array) or saved_buildings.size() != placed_buildings.size():
+        push_error("GAMEPLAY_SMOKE_FAIL: placed structures were not persisted")
+        get_tree().quit(1)
+        return
+    if not (saved_resources is Array) or int(saved_resources[0]) != 1:
+        push_error("GAMEPLAY_SMOKE_FAIL: depleted resource state was not persisted")
+        get_tree().quit(1)
+        return
+
+    print("GAMEPLAY_SMOKE_PASS  •  gathering, recipes, placement, and persistence")
+    get_tree().quit(0)
+
+func _request_lan_smoke_gather() -> void:
+    if not lan_active or multiplayer.is_server():
+        return
+    _try_interact()
+    print("LAN_SMOKE_CLIENT_REQUESTED_GATHER")
+
 func _start_lan_smoke_host() -> void:
     _host_lan_game()
     if not lan_active:
@@ -2295,11 +2380,14 @@ func _move_lan_smoke_client() -> void:
         return
     player.global_position = Vector3(31.0, _height_at(31.0, -11.0) + 1.2, -11.0)
     print("LAN_SMOKE_CLIENT_MOVED")
+    get_tree().create_timer(0.3).timeout.connect(_request_lan_smoke_gather)
 
 func _finish_lan_smoke_client() -> void:
-    if lan_active and multiplayer.get_unique_id() > 1 and network_remote_players.has(1):
+    var inventory_synced := int(shared_inventory.get("wood", 0)) >= 1
+    var resource_synced := resource_nodes.size() > 0 and int(resource_nodes[0]["amount"]) == 3
+    if lan_active and multiplayer.get_unique_id() > 1 and network_remote_players.has(1) and inventory_synced and resource_synced:
         lan_smoke_client_passed = true
-        print("LAN_SMOKE_CLIENT_PASS")
+        print("LAN_SMOKE_CLIENT_PASS  •  shared gathering state synchronized")
     else:
         push_error("LAN_SMOKE_CLIENT_FAIL: host avatar or connection missing")
         get_tree().quit(1)
@@ -2316,6 +2404,10 @@ func _finish_lan_smoke_host() -> void:
         get_tree().quit(1)
         return
     var remote_avatar: Node3D = network_remote_players[remote_id]
+    if int(shared_inventory.get("wood", 0)) < 1 or int(resource_nodes[0]["amount"]) != 3:
+        push_error("LAN_SMOKE_HOST_FAIL: gathered resource was not applied by host")
+        get_tree().quit(1)
+        return
     var moved_distance := Vector2(remote_avatar.position.x - 18.0, remote_avatar.position.z - 2.0).length()
     if moved_distance < 2.0:
         push_error("LAN_SMOKE_HOST_FAIL: player movement did not synchronize (%.2f)" % moved_distance)
