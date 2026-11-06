@@ -1464,6 +1464,12 @@ func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
 func _process(delta: float) -> void:
     _update_day_cycle(delta)
     _update_survival(delta)
+    if player and not journey_visited_crossing:
+        var crossing_distance := Vector2(player.global_position.x - river_crossing_position.x, player.global_position.z - river_crossing_position.z).length()
+        if crossing_distance <= 9.0:
+            journey_visited_crossing = true
+            _show_status_note("You discovered the river crossing.")
+            _save_game()
     _update_network(delta)
     _update_remote_players(delta)
     _update_build_preview()
