@@ -128,6 +128,12 @@ func _ready() -> void:
     print("WORLDS_STAGE player")
     _create_hud()
     print("WORLDS_STAGE hud")
+    var startup_args := OS.get_cmdline_user_args()
+    if startup_args.has("--gameplay-smoke") or startup_args.has("--lan-smoke-host") or startup_args.has("--lan-smoke-client"):
+        if FileAccess.file_exists(SAVE_PATH):
+            var remove_error := DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+            if remove_error != OK:
+                push_warning("Could not clear isolated smoke-test save: %d" % remove_error)
     _load_game()
     _on_camera_distance_changed(camera_distance)
     _on_camera_fov_changed(camera_fov)
