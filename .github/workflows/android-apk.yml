@@ -10,6 +10,14 @@ on:
       - "scenes/**"
       - "scripts/**"
       - ".github/workflows/android-apk.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "project.godot"
+      - "export_presets.cfg"
+      - "scenes/**"
+      - "scripts/**"
+      - ".github/workflows/android-apk.yml"
 
 permissions:
   contents: read
@@ -29,20 +37,17 @@ jobs:
           java-version: "17"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
+          # v4 no longer requests the retired SDK "tools" package.
           packages: platform-tools
 
       - name: Install Android build packages
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-34" \
-            "build-tools;34.0.0" \
-            "cmdline-tools;latest" \
-            "cmake;3.10.2.4988404" \
-            "ndk;23.2.8568313"
+            "build-tools;34.0.0"
 
       - name: Set up Godot and matching export templates
         uses: chickensoft-games/setup-godot@v2
