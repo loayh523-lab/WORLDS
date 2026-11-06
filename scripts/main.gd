@@ -335,8 +335,8 @@ func _create_player() -> void:
 
     camera_pivot = Node3D.new()
     camera_pivot.name = "CameraPivot"
-    camera_pivot.position = Vector3(0, 1.55, 0)
-    player.add_child(camera_pivot)
+    camera_pivot.global_position = player.global_position + Vector3(0, 1.55, 0)
+    add_child(camera_pivot)
 
     camera = Camera3D.new()
     camera.name = "FollowCamera"
@@ -744,6 +744,8 @@ func _physics_process(delta: float) -> void:
     if not player or not camera:
         return
 
+    camera_pivot.global_position = player.global_position + Vector3(0, 1.55, 0)
+
     var horizontal := Vector2.ZERO
     horizontal.x = float(Input.is_key_pressed(KEY_D) or _button_down("right")) - float(Input.is_key_pressed(KEY_A) or _button_down("left"))
     horizontal.y = float(Input.is_key_pressed(KEY_S) or _button_down("back")) - float(Input.is_key_pressed(KEY_W) or _button_down("forward"))
@@ -770,6 +772,9 @@ func _physics_process(delta: float) -> void:
         player.velocity.y = 0.0
 
     player.move_and_slide()
+    if direction.length_squared() > 0.01:
+        var target_angle := atan2(-direction.x, -direction.z)
+        player.rotation.y = lerp_angle(player.rotation.y, target_angle, delta * 10.0)
     _update_character_animation(delta, direction.length_squared() > 0.01)
 
 func _update_character_animation(delta: float, is_moving: bool) -> void:
