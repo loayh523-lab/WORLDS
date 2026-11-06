@@ -3909,6 +3909,12 @@ func _start_gameplay_smoke_test() -> void:
         get_tree().quit(1)
         return
 
+    var first_animal_legs: Array = wildlife_agents[0].get("legs", [])
+    if first_animal_legs.size() != 4:
+        push_error("GAMEPLAY_SMOKE_FAIL: wildlife leg rig is incomplete")
+        get_tree().quit(1)
+        return
+
     var wildlife_origin := Vector3(-42.0, 0.0, 20.0)
     var wildlife_destination := _constrain_wildlife_target(Vector3(70.0, 0.0, 20.0), wildlife_origin)
     var wildlife_river_center := sin(wildlife_destination.z * 0.018) * 18.0
