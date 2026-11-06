@@ -11,9 +11,9 @@ Last updated: 2026-11-06
 - Procedural playable terrain area expanded to 512 × 512 metres, with broader rolling hills and a wider winding river valley.
 - The current 512 × 512 metre terrain surface is split into four 256 × 256 metre render/collision tiles; this is not yet dynamic chunk streaming and does not make the world 4 × 4 km.
 - Added a timber crossing over the river, a stone approach from the village, a roofed river pavilion with benches and willow trees, and a marked Valleywatch Overlook reached by a stone path.
-- Expanded the settlement with a working well, two produce stalls, and eight villagers that can be approached for short dialogue; their behaviour is still simple wandering, not full daily schedules or an economy.
+- Expanded the settlement with a working well, two produce stalls, and eight villagers with simple time-of-day destinations around their homes, market, and well; walking limbs animate, but this is not a full social simulation or economy.
 - Added a buildable timber cabin with an open entrance, interior bed and room layout; proximity enables a rest interaction, and cabin placement is included in local save/load and shared build synchronization.
-- Added a journey objective that guides the player toward gathering materials and building a cabin, then directs them toward the river crossing and villagers.
+- Added a saved starter-journey sequence: gather materials, build a cabin, discover the river crossing, and speak with a villager; the HUD now displays the active objective.
 - Added live HUD bars for food, water, rest, and sprint energy. Sprint energy drains while running, recovers while walking/standing, and is saved locally.
 - Added landmark dots to the map for the village well, river crossing, pavilion, and lookout; added safe world-edge clamping and recovery if the player falls below the terrain.
 - Improved mobile control feedback with a MOVE label; movement direction is factored into a testable function, and camera drag ignores the map, settings, network, and build panels.
@@ -21,7 +21,7 @@ Last updated: 2026-11-06
 - Instanced environmental detail: up to 750 varied broadleaf trees, 190 snow-zone pine trees, 4,200 grass instances, and 260 scattered rocks; quality presets scale their visible density together.
 - Added 260 instanced riverbank pebbles and 180 reed stems along both sides of the winding river to give the shoreline more natural detail without creating hundreds of separate scene nodes.
 - Early biome distinction: a green central valley, dry eastern dunes, and a colder northern mountain zone with snow coloring and pine trees. These are starter biome regions, not a finished multi-continent world.
-- Stylized placeholder character, walking animation, third-person follow camera.
+- Stylized placeholder player with walking animation, backpack, scarf, belt, boots, hands, and simple face details; third-person follow camera. These are prototype details, not final character art.
 - Keyboard movement plus a two-finger-friendly virtual analog joystick for mobile movement; the right side remains available for camera drag.
 - Touch actions for interaction, sprint, and jump, with simultaneous-touch input.
 - Adjustable camera sensitivity and touch-button scale; drag-to-reposition action buttons, reset layout, and save the chosen layout locally.
@@ -36,7 +36,7 @@ Last updated: 2026-11-06
 - Shared material inventory and recipe-based placement for campfires, storage crates, and simple wood shelters.
 - Host-authoritative LAN resource collection and structure placement; new guests receive the shared inventory, remaining resource amounts, and built structures.
 - Local persistence for player position, survival values, world time, berry servings, resource depletion, shared inventory, placed structures, control layout, and World Memory.
-- Automated gameplay smoke test verifies resource collection, material costs, placement, and save-file persistence.
+- Automated gameplay smoke test verifies joystick direction, sprint press/release, dialogue proximity, cabin rest interaction, journey-stage progression, resource collection, material costs, placement, and local save persistence.
 - Automated LAN smoke test verifies player movement and that a guest gathering a resource updates the host and guest shared state.
 - Experimental LAN host/join flow for two phones on the same Wi-Fi.
 - Deer roaming and flee destinations are constrained to the temperate valley and steered to remain on their current riverbank; gameplay smoke checks cover habitat bounds and river-crossing regression.
