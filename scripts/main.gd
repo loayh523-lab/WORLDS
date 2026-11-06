@@ -1480,6 +1480,17 @@ func _nearest_interaction_for(position: Vector3) -> Dictionary:
             result["action"] = "memory"
             result["index"] = -1
 
+    for index in range(village_agents.size()):
+        var villager: Dictionary = village_agents[index]
+        var villager_root: Node3D = villager.get("root")
+        if not is_instance_valid(villager_root):
+            continue
+        var villager_distance := Vector2(position.x - villager_root.global_position.x, position.z - villager_root.global_position.z).length()
+        if villager_distance < 3.2 and villager_distance < best_distance:
+            best_distance = villager_distance
+            result["action"] = "talk"
+            result["index"] = index
+
     for index in range(placed_buildings.size()):
         var building: Dictionary = placed_buildings[index]
         if str(building.get("type", "")) != "cabin":
@@ -1525,6 +1536,8 @@ func _rpc_request_interaction() -> void:
             rpc_id(sender, "_rpc_apply_personal_interaction", "forage")
         "gather":
             _server_gather_resource(int(nearby["index"]), sender)
+        "talk":
+            rpc_id(sender, "_rpc_apply_villager_dialogue", int(nearby.get("index", -1)))
         "sleep", "home":
             world_clock = 7.0
             rpc("_rpc_set_shared_clock", world_clock)
@@ -1534,6 +1547,25 @@ func _rpc_request_interaction() -> void:
             rpc("_rpc_world_memory_activated")
         _:
             rpc_id(sender, "_rpc_apply_personal_interaction", "nothing")
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_apply_villager_dialogue(villager_index: int) -> void:
+    _show_status_note(_villager_dialogue(villager_index))
+
+func _villager_dialogue(villager_index: int) -> String:
+    var lines: Array[String] = [
+        "The river is calm today. Keep your supplies dry before crossing.",
+        "The market opens early. The valley wakes with the first light.",
+        "You can find good timber beyond the western trees.",
+        "Watch the mountain weather. The snow arrives quickly up there.",
+        "The pavilion is a quiet place to rest and watch the water.",
+        "Wild berries grow near the greener slopes. Take only what you need.",
+        "A small camp becomes a home when friends build it together.",
+        "I heard deer moving near the forest edge just before sunrise."
+    ]
+    if villager_index < 0 or villager_index >= village_agents.size():
+        return "Welcome, traveler. Take a moment to explore our village."
+    return lines[posmod(villager_index, lines.size())]
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_apply_personal_interaction(action: String) -> void:
@@ -1683,6 +1715,8 @@ func _get_interaction_prompt() -> String:
             return "USE / E: Rest at the campsite"
         "home":
             return "USE / E: Rest inside your cabin"
+        "talk":
+            return "USE / E: Talk with this villager"
         "memory":
             return "USE / E: Listen to the world's memory"
         _:
@@ -1745,6 +1779,9 @@ func _try_interact() -> void:
             thirst = maxf(0.0, thirst - 5.0)
             health = minf(100.0, health + 12.0)
             _show_status_note("You slept safely in your cabin. A new morning begins.")
+        "talk":
+            var nearby_villager := _nearest_interaction_for(player.global_position)
+            _show_status_note(_villager_dialogue(int(nearby_villager.get("index", -1))))
         "memory":
             _awaken_world_memory()
         _:
@@ -3470,6 +3507,10 @@ func _start_gameplay_smoke_test() -> void:
         return
     if get_node_or_null("Riverlight_Crossing") == null or get_node_or_null("River_Whisper_Pavilion") == null:
         push_error("GAMEPLAY_SMOKE_FAIL: riverfront landmarks were not created")
+        get_tree().quit(1)
+        return
+    if village_agents.size() < 8 or _villager_dialogue(0).is_empty():
+        push_error("GAMEPLAY_SMOKE_FAIL: villager interaction content is missing")
         get_tree().quit(1)
         return
     if get_node_or_null("Village_Well") == null:
