@@ -1249,6 +1249,7 @@ func _rpc_request_interaction() -> void:
 
     var nearby := _nearest_interaction_for(remote_avatar.global_position)
     var action: String = nearby["action"]
+    print("LAN_SMOKE_HOST_INTERACTION  •  sender %d  •  position %s  •  action %s  •  index %d" % [sender, str(remote_avatar.global_position), action, int(nearby["index"])])
     match action:
         "drink":
             rpc_id(sender, "_rpc_apply_personal_interaction", "drink")
@@ -1319,6 +1320,8 @@ func _server_gather_resource(index: int, requester_id: int) -> void:
     if remaining <= 0:
         return
     var kind: String = resource["kind"]
+    if OS.get_cmdline_user_args().has("--lan-smoke-host"):
+        print("LAN_SMOKE_HOST_GATHER  •  requester %d  •  resource %d  •  kind %s  •  before %d" % [requester_id, index, kind, remaining])
     if not shared_inventory.has(kind):
         return
 
@@ -2129,9 +2132,13 @@ func _on_connection_failed() -> void:
 func _on_server_disconnected() -> void:
     _disconnect_lan_game()
     _set_network_status("Host disconnected  •  Session ended")
-    if OS.get_cmdline_user_args().has("--lan-smoke-client") and lan_smoke_client_passed:
-        print("LAN_SMOKE_CLIENT_EXIT_PASS")
-        get_tree().quit(0)
+    if OS.get_cmdline_user_args().has("--lan-smoke-client"):
+        if lan_smoke_client_passed:
+            print("LAN_SMOKE_CLIENT_EXIT_PASS")
+            get_tree().quit(0)
+        else:
+            push_error("LAN_SMOKE_CLIENT_EXIT_FAIL: host ended session before shared state passed")
+            get_tree().quit(1)
 
 func _create_remote_player_visual(peer_id: int, spawn_position: Vector3, facing: float) -> Node3D:
     var avatar := Node3D.new()
@@ -2385,14 +2392,26 @@ func _move_lan_smoke_client() -> void:
 func _finish_lan_smoke_client() -> void:
     var inventory_synced := int(shared_inventory.get("wood", 0)) >= 1
     var resource_synced := resource_nodes.size() > 0 and int(resource_nodes[0]["amount"]) == 3
-    if lan_active and multiplayer.get_unique_id() > 1 and network_remote_players.has(1) and inventory_synced and resource_synced:
+    var host_avatar_seen := network_remote_players.has(1)
+    print("LAN_SMOKE_CLIENT_STATE  •  connected %s  •  host avatar %s  •  wood %d  •  resource amount %d" % [
+        str(lan_active and multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED),
+        str(host_avatar_seen),
+        int(shared_inventory.get("wood", 0)),
+        int(resource_nodes[0]["amount"]) if resource_nodes.size() > 0 else -1
+    ])
+    if lan_active and multiplayer.get_unique_id() > 1 and host_avatar_seen and inventory_synced and resource_synced:
         lan_smoke_client_passed = true
         print("LAN_SMOKE_CLIENT_PASS  •  shared gathering state synchronized")
     else:
-        push_error("LAN_SMOKE_CLIENT_FAIL: host avatar or connection missing")
-        get_tree().quit(1)
+        push_error("LAN_SMOKE_CLIENT_FAIL: shared gather state not synchronized; keeping connection open for host diagnostics")
 
 func _finish_lan_smoke_host() -> void:
+    if OS.get_cmdline_user_args().has("--lan-smoke-host"):
+        print("LAN_SMOKE_HOST_STATE  •  peers %d  •  wood %d  •  resource amount %d" % [
+            multiplayer.get_peers().size(),
+            int(shared_inventory.get("wood", 0)),
+            int(resource_nodes[0]["amount"]) if resource_nodes.size() > 0 else -1
+        ])
     var peers := multiplayer.get_peers()
     if peers.size() != 1:
         push_error("LAN_SMOKE_HOST_FAIL: expected one connected client, got %d" % peers.size())
