@@ -315,6 +315,7 @@ func _create_terrain() -> void:
     for chunk_z in range(chunks_per_axis):
         for chunk_x in range(chunks_per_axis):
             var vertices := PackedVector3Array()
+            var normals := PackedVector3Array()
             var colors := PackedColorArray()
             var indices := PackedInt32Array()
 
@@ -326,6 +327,13 @@ func _create_terrain() -> void:
                     var z := -WORLD_SIZE * 0.5 + float(global_z_index) * step
                     var y := _height_at(x, z)
                     vertices.append(Vector3(x, y, z))
+                    var normal_sample := 0.55
+                    var terrain_normal := Vector3(
+                        _height_at(x - normal_sample, z) - _height_at(x + normal_sample, z),
+                        normal_sample * 2.0,
+                        _height_at(x, z - normal_sample) - _height_at(x, z + normal_sample)
+                    ).normalized()
+                    normals.append(terrain_normal)
 
                     var tint := Color(0.20, 0.39, 0.18)
                     var variation: float = clampf((y + 3.0) / 24.0, 0.0, 1.0)
@@ -355,6 +363,7 @@ func _create_terrain() -> void:
             var arrays := []
             arrays.resize(Mesh.ARRAY_MAX)
             arrays[Mesh.ARRAY_VERTEX] = vertices
+            arrays[Mesh.ARRAY_NORMAL] = normals
             arrays[Mesh.ARRAY_COLOR] = colors
             arrays[Mesh.ARRAY_INDEX] = indices
 
@@ -788,10 +797,49 @@ func _create_player() -> void:
     visual.name = "CharacterVisual"
     player.add_child(visual)
 
-    player_torso = _make_capsule_part(0.34, 1.12, Color(0.16, 0.30, 0.23))
+    player_torso = MeshInstance3D.new()
     player_torso.name = "PlayerTorso"
-    player_torso.position = Vector3(0, 1.16, 0)
+    var torso_mesh := CylinderMesh.new()
+    torso_mesh.top_radius = 0.27
+    torso_mesh.bottom_radius = 0.39
+    torso_mesh.height = 0.98
+    torso_mesh.radial_segments = 16
+    player_torso.mesh = torso_mesh
+    player_torso.position = Vector3(0.0, 1.24, 0.0)
+    var torso_material := StandardMaterial3D.new()
+    torso_material.albedo_color = Color(0.16, 0.30, 0.23)
+    torso_material.roughness = 0.88
+    player_torso.material_override = torso_material
     visual.add_child(player_torso)
+
+    var neck := MeshInstance3D.new()
+    var neck_mesh := CylinderMesh.new()
+    neck_mesh.top_radius = 0.095
+    neck_mesh.bottom_radius = 0.12
+    neck_mesh.height = 0.20
+    neck.mesh = neck_mesh
+    neck.position = Vector3(0.0, 1.78, 0.0)
+    var neck_material := StandardMaterial3D.new()
+    neck_material.albedo_color = Color(0.66, 0.46, 0.32)
+    neck.material_override = neck_material
+    visual.add_child(neck)
+
+    var vest_front := _make_box_part(Vector3(0.43, 0.62, 0.055), Color(0.095, 0.17, 0.145))
+    vest_front.position = Vector3(0.0, 1.26, -0.36)
+    visual.add_child(vest_front)
+
+    for shoulder_x in [-0.39, 0.39]:
+        var shoulder_guard := MeshInstance3D.new()
+        var shoulder_mesh := SphereMesh.new()
+        shoulder_mesh.radius = 0.17
+        shoulder_mesh.height = 0.25
+        shoulder_guard.mesh = shoulder_mesh
+        shoulder_guard.position = Vector3(shoulder_x, 1.56, 0.0)
+        var shoulder_material := StandardMaterial3D.new()
+        shoulder_material.albedo_color = Color(0.22, 0.28, 0.22)
+        shoulder_material.roughness = 0.9
+        shoulder_guard.material_override = shoulder_material
+        visual.add_child(shoulder_guard)
 
     var head := MeshInstance3D.new()
     var head_mesh := SphereMesh.new()
@@ -815,14 +863,12 @@ func _create_player() -> void:
     hair.material_override = hair_material
     visual.add_child(hair)
 
-    left_arm = _make_capsule_part(0.13, 0.78, Color(0.19, 0.34, 0.26))
-    left_arm.position = Vector3(-0.40, 1.25, 0)
-    left_arm.rotation.z = PI * 0.5
+    left_arm = _make_capsule_part(0.115, 0.76, Color(0.19, 0.34, 0.26))
+    left_arm.position = Vector3(-0.43, 1.17, 0)
     visual.add_child(left_arm)
 
-    right_arm = _make_capsule_part(0.13, 0.78, Color(0.19, 0.34, 0.26))
-    right_arm.position = Vector3(0.40, 1.25, 0)
-    right_arm.rotation.z = PI * 0.5
+    right_arm = _make_capsule_part(0.115, 0.76, Color(0.19, 0.34, 0.26))
+    right_arm.position = Vector3(0.43, 1.17, 0)
     visual.add_child(right_arm)
     _apply_player_outfit()
 
@@ -861,13 +907,13 @@ func _create_player() -> void:
         boot.position = Vector3(boot_x, 0.12, -0.075)
         visual.add_child(boot)
 
-    for hand_x in [-0.79, 0.79]:
+    for hand_x in [-0.43, 0.43]:
         var hand := MeshInstance3D.new()
         var hand_mesh := SphereMesh.new()
         hand_mesh.radius = 0.115
         hand_mesh.height = 0.23
         hand.mesh = hand_mesh
-        hand.position = Vector3(hand_x, 1.23, 0.0)
+        hand.position = Vector3(hand_x, 0.77, 0.0)
         hand.material_override = skin_material
         visual.add_child(hand)
 
@@ -924,8 +970,8 @@ func _create_hud() -> void:
     add_child(layer)
 
     var panel := PanelContainer.new()
-    panel.position = Vector2(18, 18)
-    panel.custom_minimum_size = Vector2(300, 120)
+    panel.position = Vector2(14, 14)
+    panel.custom_minimum_size = Vector2(252, 96)
     layer.add_child(panel)
 
     var hud_column := VBoxContainer.new()
@@ -935,7 +981,7 @@ func _create_hud() -> void:
     var brand_logo := TextureRect.new()
     brand_logo.name = "WorldsBrandLogo"
     brand_logo.texture = load("res://assets/worlds_logo.svg")
-    brand_logo.custom_minimum_size = Vector2(220.0, 67.0)
+    brand_logo.custom_minimum_size = Vector2(136.0, 40.0)
     brand_logo.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
     brand_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
     brand_logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -944,7 +990,7 @@ func _create_hud() -> void:
     hud_label = Label.new()
     hud_label.text = "WORLDS  •  CONNECTING WORLD"
     hud_label.add_theme_color_override("font_color", Color(0.92, 0.95, 0.88))
-    hud_label.add_theme_font_size_override("font_size", 16)
+    hud_label.add_theme_font_size_override("font_size", 12)
     hud_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     hud_column.add_child(hud_label)
 
@@ -1128,7 +1174,7 @@ func _create_survival_bar(parent: VBoxContainer, caption: String, initial_value:
     row.add_theme_constant_override("separation", 8)
     var title := Label.new()
     title.text = caption
-    title.custom_minimum_size.x = 58.0
+    title.custom_minimum_size.x = 42.0
     title.add_theme_font_size_override("font_size", 11)
     row.add_child(title)
     var bar := ProgressBar.new()
@@ -4401,6 +4447,55 @@ func _start_gameplay_smoke_test() -> void:
     _physics_process(0.1)
     if player.velocity.length_squared() > 0.001 or not _is_frontend_visible():
         push_error("GAMEPLAY_SMOKE_FAIL: player movement was not paused behind menus")
+        get_tree().quit(1)
+        return
+
+    _close_main_menu()
+    var joystick_press := InputEventScreenTouch.new()
+    joystick_press.index = 41
+    joystick_press.position = joystick_center
+    joystick_press.pressed = true
+    _input(joystick_press)
+    var joystick_drag := InputEventScreenDrag.new()
+    joystick_drag.index = 41
+    joystick_drag.position = joystick_center + Vector2(0.0, -52.0)
+    joystick_drag.relative = Vector2(0.0, -52.0)
+    _input(joystick_drag)
+    if joystick_touch_index != 41 or joystick_vector.y > -0.90:
+        push_error("GAMEPLAY_SMOKE_FAIL: touch joystick did not capture and route a finger drag")
+        get_tree().quit(1)
+        return
+    _physics_process(0.1)
+    if player.velocity.z > -0.1:
+        push_error("GAMEPLAY_SMOKE_FAIL: player did not receive forward movement from the touch joystick")
+        get_tree().quit(1)
+        return
+    var joystick_release := InputEventScreenTouch.new()
+    joystick_release.index = 41
+    joystick_release.position = joystick_center + Vector2(0.0, -52.0)
+    joystick_release.pressed = false
+    _input(joystick_release)
+    if joystick_touch_index != -1 or joystick_vector.length_squared() > 0.001:
+        push_error("GAMEPLAY_SMOKE_FAIL: touch joystick did not reset on finger release")
+        get_tree().quit(1)
+        return
+
+    var run_touch := InputEventScreenTouch.new()
+    run_touch.index = 42
+    run_touch.position = action_buttons["run"].position
+    run_touch.pressed = true
+    _input(run_touch)
+    if not _button_down("run") or not touch_action_indices.has(42):
+        push_error("GAMEPLAY_SMOKE_FAIL: run touch button did not activate through the routed input handler")
+        get_tree().quit(1)
+        return
+    var run_release := InputEventScreenTouch.new()
+    run_release.index = 42
+    run_release.position = run_touch.position
+    run_release.pressed = false
+    _input(run_release)
+    if _button_down("run") or touch_action_indices.has(42):
+        push_error("GAMEPLAY_SMOKE_FAIL: run touch button did not release cleanly")
         get_tree().quit(1)
         return
 
