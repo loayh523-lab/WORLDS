@@ -601,6 +601,12 @@ func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
 func _process(delta: float) -> void:
     _update_day_cycle(delta)
     _update_survival(delta)
+    _update_network(delta)
+    _update_remote_players(delta)
+    _update_adaptive_quality(delta)
+    save_elapsed += delta
+    if save_elapsed >= 15.0:
+        _save_game()
     if status_note_time > 0.0:
         status_note_time = max(0.0, status_note_time - delta)
     if hud_label and player:
@@ -839,19 +845,20 @@ func _create_memory_stone() -> void:
     stone.material_override = stone_material
     add_child(stone)
 
-    var crystal := MeshInstance3D.new()
+    memory_crystal = MeshInstance3D.new()
     var crystal_mesh := SphereMesh.new()
     crystal_mesh.radius = 0.22
     crystal_mesh.height = 0.52
-    crystal.mesh = crystal_mesh
-    crystal.position = memory_position + Vector3(0, 1.62, 0)
+    memory_crystal.mesh = crystal_mesh
+    memory_crystal.position = memory_position + Vector3(0, 1.62, 0)
     var crystal_material := StandardMaterial3D.new()
     crystal_material.albedo_color = Color(0.20, 0.72, 0.66)
     crystal_material.emission_enabled = true
     crystal_material.emission = Color(0.08, 0.48, 0.42)
+    crystal_material.emission = Color(0.08, 0.48, 0.42)
     crystal_material.emission_energy_multiplier = 0.55
-    crystal.material_override = crystal_material
-    add_child(crystal)
+    memory_crystal.material_override = crystal_material
+    add_child(memory_crystal)
 
 func _awaken_world_memory() -> void:
     if memory_awakened:
@@ -957,6 +964,243 @@ func _update_character_animation(delta: float, is_moving: bool) -> void:
         right_leg.rotation.x = lerp_angle(right_leg.rotation.x, 0.0, delta * 8.0)
         left_arm.rotation.x = lerp_angle(left_arm.rotation.x, 0.0, delta * 8.0)
         right_arm.rotation.x = lerp_angle(right_arm.rotation.x, 0.0, delta * 8.0)
+
+
+func _set_network_status(message: String) -> void:
+    if network_status_label:
+        network_status_label.text = message
+    print("[WORLDS LAN] ", message)
+
+func _get_lan_ipv4() -> String:
+    for address in IP.get_local_addresses():
+        if address.contains(":") or address.begins_with("127.") or address.begins_with("169.254."):
+            continue
+        var octets := address.split(".")
+        if octets.size() != 4:
+            continue
+        var valid := true
+        for octet in octets:
+            if not octet.is_valid_int() or int(octet) < 0 or int(octet) > 255:
+                valid = false
+                break
+        if valid and (address.begins_with("192.168.") or address.begins_with("10.") or address.begins_with("172.")):
+            return address
+    return "Wi-Fi IP not detected"
+
+func _is_valid_ipv4(address: String) -> bool:
+    var octets := address.split(".")
+    if octets.size() != 4:
+        return false
+    for octet in octets:
+        if not octet.is_valid_int() or int(octet) < 0 or int(octet) > 255:
+            return false
+    return true
+
+func _host_lan_game() -> void:
+    _disconnect_lan_game()
+    var network_peer := ENetMultiplayerPeer.new()
+    var error := network_peer.create_server(LAN_PORT, LAN_MAX_CLIENTS)
+    if error != OK:
+        _set_network_status("Could not host  •  Error %d" % error)
+        return
+    multiplayer.multiplayer_peer = network_peer
+    lan_active = true
+    host_ip_label.text = "HOST IP: %s  •  UDP %d" % [_get_lan_ipv4(), LAN_PORT]
+    _set_network_status("World hosted  •  Ask your brother to enter this IP")
+
+func _join_lan_game() -> void:
+    var address := address_input.text.strip_edges()
+    if not _is_valid_ipv4(address):
+        _set_network_status("Enter a valid local IPv4 address first.")
+        return
+    _disconnect_lan_game()
+    var network_peer := ENetMultiplayerPeer.new()
+    var error := network_peer.create_client(address, LAN_PORT)
+    if error != OK:
+        _set_network_status("Could not start connection  •  Error %d" % error)
+        return
+    multiplayer.multiplayer_peer = network_peer
+    lan_active = true
+    _set_network_status("Connecting to %s..." % address)
+
+func _disconnect_lan_game() -> void:
+    lan_active = false
+    network_send_timer = 0.0
+    if multiplayer.multiplayer_peer:
+        multiplayer.multiplayer_peer.close()
+    multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+    for peer_id in network_remote_players.keys():
+        var avatar: Node3D = network_remote_players[peer_id]
+        if is_instance_valid(avatar):
+            avatar.queue_free()
+    network_remote_players.clear()
+    network_remote_targets.clear()
+    if network_status_label:
+        _set_network_status("Offline  •  Ready to host or join")
+
+func _on_peer_connected(peer_id: int) -> void:
+    if not multiplayer.is_server():
+        return
+    var spawn_position := Vector3(18.0, _height_at(18.0, 0.0) + 1.2, float(peer_id % 2) * 3.0 + 2.0)
+    _ensure_remote_player(peer_id, spawn_position, 0.0)
+    rpc("_rpc_spawn_remote_player", peer_id, spawn_position, 0.0)
+    _set_network_status("Player connected  •  Waiting for first movement")
+
+func _on_peer_disconnected(peer_id: int) -> void:
+    _remove_remote_player(peer_id)
+    if multiplayer.is_server():
+        rpc("_rpc_remove_remote_player", peer_id)
+    _set_network_status("A player left the world")
+
+func _on_connected_to_server() -> void:
+    lan_active = true
+    _set_network_status("Connected  •  Synchronizing world...")
+    rpc_id(1, "_rpc_request_player_roster")
+
+func _on_connection_failed() -> void:
+    _disconnect_lan_game()
+    _set_network_status("Connection failed  •  Check Wi-Fi and host IP")
+
+func _on_server_disconnected() -> void:
+    _disconnect_lan_game()
+    _set_network_status("Host disconnected  •  Session ended")
+
+func _create_remote_player_visual(peer_id: int, spawn_position: Vector3, facing: float) -> Node3D:
+    var avatar := Node3D.new()
+    avatar.name = "RemotePlayer_%d" % peer_id
+    avatar.position = spawn_position
+    avatar.rotation.y = facing
+
+    var body := MeshInstance3D.new()
+    var body_mesh := CapsuleMesh.new()
+    body_mesh.radius = 0.34
+    body_mesh.height = 1.16
+    body.mesh = body_mesh
+    body.position.y = 1.16
+    var body_material := StandardMaterial3D.new()
+    body_material.albedo_color = Color(0.20, 0.42, 0.72) if peer_id % 2 == 0 else Color(0.66, 0.38, 0.18)
+    body.material_override = body_material
+    avatar.add_child(body)
+
+    var head := MeshInstance3D.new()
+    var head_mesh := SphereMesh.new()
+    head_mesh.radius = 0.24
+    head_mesh.height = 0.48
+    head.mesh = head_mesh
+    head.position.y = 1.88
+    var head_material := StandardMaterial3D.new()
+    head_material.albedo_color = Color(0.66, 0.46, 0.32)
+    head.material_override = head_material
+    avatar.add_child(head)
+
+    var label := Label3D.new()
+    label.text = "PLAYER %d" % peer_id
+    label.position.y = 2.35
+    label.font_size = 30
+    label.pixel_size = 0.008
+    label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+    label.no_depth_test = true
+    avatar.add_child(label)
+
+    add_child(avatar)
+    return avatar
+
+func _ensure_remote_player(peer_id: int, spawn_position: Vector3, facing: float) -> void:
+    if peer_id == multiplayer.get_unique_id():
+        return
+    if not network_remote_players.has(peer_id) or not is_instance_valid(network_remote_players[peer_id]):
+        var avatar := _create_remote_player_visual(peer_id, spawn_position, facing)
+        network_remote_players[peer_id] = avatar
+    _set_remote_player_target(peer_id, spawn_position, facing)
+
+func _set_remote_player_target(peer_id: int, target_position: Vector3, facing: float) -> void:
+    network_remote_targets[peer_id] = {
+        "position": target_position,
+        "facing": facing
+    }
+
+func _remove_remote_player(peer_id: int) -> void:
+    if network_remote_players.has(peer_id):
+        var avatar: Node3D = network_remote_players[peer_id]
+        if is_instance_valid(avatar):
+            avatar.queue_free()
+    network_remote_players.erase(peer_id)
+    network_remote_targets.erase(peer_id)
+
+func _update_remote_players(delta: float) -> void:
+    for peer_id in network_remote_players.keys():
+        var avatar: Node3D = network_remote_players[peer_id]
+        if not is_instance_valid(avatar):
+            continue
+        if not network_remote_targets.has(peer_id):
+            continue
+        var target: Dictionary = network_remote_targets[peer_id]
+        var weight := clampf(delta * 12.0, 0.0, 1.0)
+        avatar.position = avatar.position.lerp(target["position"], weight)
+        avatar.rotation.y = lerp_angle(avatar.rotation.y, float(target["facing"]), weight)
+
+func _update_network(delta: float) -> void:
+    if not lan_active:
+        return
+    network_send_timer += delta
+    if network_send_timer >= NETWORK_SEND_INTERVAL:
+        network_send_timer = 0.0
+        _send_local_network_state()
+
+func _send_local_network_state() -> void:
+    if not lan_active or multiplayer.multiplayer_peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
+        return
+    if multiplayer.is_server():
+        var host_position := player.global_position
+        var host_facing := player.rotation.y
+        rpc("_rpc_apply_remote_player_state", 1, host_position, host_facing, world_clock)
+    else:
+        rpc_id(1, "_rpc_receive_player_state", player.global_position, player.rotation.y)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_request_player_roster() -> void:
+    if not multiplayer.is_server():
+        return
+    var requester := multiplayer.get_remote_sender_id()
+    rpc_id(requester, "_rpc_spawn_remote_player", 1, player.global_position, player.rotation.y)
+    for peer_id in network_remote_players.keys():
+        if int(peer_id) == requester:
+            continue
+        var avatar: Node3D = network_remote_players[peer_id]
+        if is_instance_valid(avatar):
+            rpc_id(requester, "_rpc_spawn_remote_player", int(peer_id), avatar.global_position, avatar.rotation.y)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_spawn_remote_player(peer_id: int, spawn_position: Vector3, facing: float) -> void:
+    _ensure_remote_player(peer_id, spawn_position, facing)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_remove_remote_player(peer_id: int) -> void:
+    _remove_remote_player(peer_id)
+
+@rpc("any_peer", "call_remote", "unreliable_ordered")
+func _rpc_receive_player_state(world_position: Vector3, facing: float) -> void:
+    if not multiplayer.is_server():
+        return
+    var sender := multiplayer.get_remote_sender_id()
+    if sender <= 1 or not network_remote_players.has(sender):
+        return
+    var safe_position := Vector3(
+        clampf(world_position.x, -WORLD_SIZE * 0.48, WORLD_SIZE * 0.48),
+        clampf(world_position.y, -10.0, 30.0),
+        clampf(world_position.z, -WORLD_SIZE * 0.48, WORLD_SIZE * 0.48)
+    )
+    _set_remote_player_target(sender, safe_position, facing)
+    for peer_id in multiplayer.get_peers():
+        if peer_id != sender:
+            rpc_id(peer_id, "_rpc_apply_remote_player_state", sender, safe_position, facing, world_clock)
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facing: float, synced_clock: float) -> void:
+    _ensure_remote_player(peer_id, world_position, facing)
+    _set_remote_player_target(peer_id, world_position, facing)
+    world_clock = fposmod(synced_clock, 24.0)
+
 
 func _button_down(action: String) -> bool:
     return pressed_actions.has(action)
