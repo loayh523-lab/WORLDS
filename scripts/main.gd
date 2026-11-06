@@ -1691,13 +1691,13 @@ func _request_build(build_type: String) -> void:
     if not player:
         return
     if lan_active and not multiplayer.is_server():
-        rpc_id(1, "_rpc_request_place_building", build_type)
+        rpc_id(1, "_rpc_request_place_building", build_type, build_rotation_offset)
         _show_status_note("Requesting a place from the host...")
         return
-    _server_place_building(build_type, player.global_position, player.rotation.y)
+    _server_place_building(build_type, player.global_position, player.rotation.y, build_rotation_offset)
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_request_place_building(build_type: String) -> void:
+func _rpc_request_place_building(build_type: String, rotation_offset: float) -> void:
     if not multiplayer.is_server():
         return
     var sender := multiplayer.get_remote_sender_id()
@@ -1706,9 +1706,9 @@ func _rpc_request_place_building(build_type: String) -> void:
     var avatar: Node3D = network_remote_players[sender]
     if not is_instance_valid(avatar):
         return
-    _server_place_building(build_type, avatar.global_position, avatar.rotation.y)
+    _server_place_building(build_type, avatar.global_position, avatar.rotation.y, rotation_offset)
 
-func _server_place_building(build_type: String, actor_position: Vector3, actor_facing: float) -> void:
+func _server_place_building(build_type: String, actor_position: Vector3, actor_facing: float, rotation_offset := 0.0) -> void:
     var recipe := _get_build_recipe(build_type)
     if recipe.is_empty():
         _show_status_note("Unknown building plan.")
@@ -1719,7 +1719,7 @@ func _server_place_building(build_type: String, actor_position: Vector3, actor_f
             _show_status_note("Not enough materials for this structure.")
             return
 
-    var facing := actor_facing + build_rotation_offset
+    var facing := actor_facing + clampf(rotation_offset, -TAU, TAU)
     var forward := Vector3(sin(facing), 0.0, -cos(facing))
     var placement := actor_position + forward * 4.0
     placement.x = clampf(placement.x, -WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
@@ -2038,6 +2038,8 @@ func _update_build_preview() -> void:
     build_preview.rotation.y = facing
     var river_center := sin(target.z * 0.018) * 18.0
     var blocked := absf(target.x - river_center) < 9.0
+    blocked = blocked or Vector2(target.x, target.z).distance_to(Vector2(camp_position.x, camp_position.z)) < 3.2
+    blocked = blocked or absf(target.x) > WORLD_SIZE * 0.47 or absf(target.z) > WORLD_SIZE * 0.47
     for building in placed_buildings:
         var other: Vector3 = building["position"]
         if Vector2(target.x, target.z).distance_to(Vector2(other.x, other.z)) < 3.4:
