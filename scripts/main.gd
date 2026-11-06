@@ -4003,8 +4003,14 @@ func _start_gameplay_smoke_test() -> void:
     var saved_inventory: Variant = saved.get_value("world", "shared_inventory", {})
     var saved_buildings: Variant = saved.get_value("world", "placed_buildings", [])
     var saved_stamina: float = float(saved.get_value("player", "stamina", -1.0))
+    var saved_crossing: bool = bool(saved.get_value("world", "journey_visited_crossing", false))
+    var saved_villager: bool = bool(saved.get_value("world", "journey_met_villager", false))
     if not is_equal_approx(saved_stamina, 61.25):
         push_error("GAMEPLAY_SMOKE_FAIL: sprint stamina was not persisted")
+        get_tree().quit(1)
+        return
+    if not saved_crossing or not saved_villager:
+        push_error("GAMEPLAY_SMOKE_FAIL: journey milestones were not persisted")
         get_tree().quit(1)
         return
     stamina = stamina_before_save
