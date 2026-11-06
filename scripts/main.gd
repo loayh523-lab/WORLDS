@@ -1640,6 +1640,7 @@ func _rpc_request_interaction() -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_apply_villager_dialogue(villager_index: int) -> void:
+    journey_met_villager = true
     _show_status_note(_villager_dialogue(villager_index))
 
 func _villager_dialogue(villager_index: int) -> String:
@@ -1891,6 +1892,7 @@ func _try_interact() -> void:
             _show_status_note("You slept safely in your cabin. A new morning begins.")
         "talk":
             var nearby_villager := _nearest_interaction_for(player.global_position)
+            journey_met_villager = true
             _show_status_note(_villager_dialogue(int(nearby_villager.get("index", -1))))
         "memory":
             _awaken_world_memory()
@@ -4052,6 +4054,8 @@ func _save_game() -> void:
     var config := ConfigFile.new()
     config.set_value("world", "clock", world_clock)
     config.set_value("world", "memory_awakened", memory_awakened)
+    config.set_value("world", "journey_visited_crossing", journey_visited_crossing)
+    config.set_value("world", "journey_met_villager", journey_met_villager)
     config.set_value("player", "health", health)
     config.set_value("player", "hunger", hunger)
     config.set_value("player", "thirst", thirst)
@@ -4093,6 +4097,8 @@ func _load_game() -> void:
         return
 
     world_clock = fposmod(float(config.get_value("world", "clock", world_clock)), 24.0)
+    journey_visited_crossing = bool(config.get_value("world", "journey_visited_crossing", journey_visited_crossing))
+    journey_met_villager = bool(config.get_value("world", "journey_met_villager", journey_met_villager))
     health = clampf(float(config.get_value("player", "health", health)), 0.0, 100.0)
     hunger = clampf(float(config.get_value("player", "hunger", hunger)), 0.0, 100.0)
     thirst = clampf(float(config.get_value("player", "thirst", thirst)), 0.0, 100.0)
