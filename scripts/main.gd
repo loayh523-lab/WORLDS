@@ -26,6 +26,7 @@ var survival_bars: Dictionary = {}
 var mobile_controls: Control
 var world_environment: Environment
 var sky_material: ProceduralSkyMaterial
+var cloud_layer: MultiMeshInstance3D
 var sun_light: DirectionalLight3D
 var tree_trunks: MultiMeshInstance3D
 var tree_canopies: MultiMeshInstance3D
@@ -218,12 +219,56 @@ func _create_environment() -> void:
     world_environment.fog_density = 0.0025
     world_env.environment = world_environment
     add_child(world_env)
+    _create_cloud_layer()
 
     sun_light = DirectionalLight3D.new()
     sun_light.rotation_degrees = Vector3(-48, -32, 0)
     sun_light.light_energy = 1.05
     sun_light.shadow_enabled = true
     add_child(sun_light)
+
+func _create_cloud_layer() -> void:
+    cloud_layer = MultiMeshInstance3D.new()
+    cloud_layer.name = "Soft_Valley_Clouds"
+    var cloud_mesh := SphereMesh.new()
+    cloud_mesh.radius = 5.0
+    cloud_mesh.height = 2.6
+    cloud_mesh.radial_segments = 8
+    cloud_mesh.rings = 4
+    var cloud_material := StandardMaterial3D.new()
+    cloud_material.albedo_color = Color(0.82, 0.89, 0.94, 0.42)
+    cloud_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    cloud_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    cloud_material.roughness = 1.0
+    cloud_mesh.material = cloud_material
+    var cloud_multimesh := MultiMesh.new()
+    cloud_multimesh.transform_format = MultiMesh.TRANSFORM_3D
+    cloud_multimesh.mesh = cloud_mesh
+    var cloud_rng := RandomNumberGenerator.new()
+    cloud_rng.seed = 20261106
+    var cloud_count := 35
+    cloud_multimesh.instance_count = cloud_count
+    for cloud_index in range(cloud_count):
+        var group_index := int(cloud_index / 5)
+        var puff_index := cloud_index % 5
+        var group_x := -190.0 + float(group_index % 4) * 125.0
+        var group_z := -170.0 + float(group_index / 4) * 210.0
+        var cloud_position := Vector3(
+            group_x + cloud_rng.randf_range(-12.0, 12.0) + float(puff_index) * 2.0,
+            72.0 + cloud_rng.randf_range(-2.0, 2.0),
+            group_z + cloud_rng.randf_range(-10.0, 10.0)
+        )
+        var cloud_scale := Vector3(
+            cloud_rng.randf_range(1.2, 2.1),
+            cloud_rng.randf_range(0.48, 0.72),
+            cloud_rng.randf_range(0.9, 1.7)
+        )
+        var cloud_transform := Transform3D(Basis.IDENTITY.scaled(cloud_scale), cloud_position)
+        cloud_multimesh.set_instance_transform(cloud_index, cloud_transform)
+    cloud_layer.multimesh = cloud_multimesh
+    cloud_layer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    cloud_layer.extra_cull_margin = 180.0
+    add_child(cloud_layer)
 
 func _height_at(x: float, z: float) -> float:
     var broad_hills := sin(x * 0.013) * 6.5 + cos(z * 0.011) * 7.0
@@ -1513,6 +1558,8 @@ func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
 
 func _process(delta: float) -> void:
     _update_day_cycle(delta)
+    if cloud_layer:
+        cloud_layer.rotation.y += delta * 0.0009
     _update_survival(delta)
     if player and not journey_visited_crossing:
         var crossing_distance := Vector2(player.global_position.x - river_crossing_position.x, player.global_position.z - river_crossing_position.z).length()
