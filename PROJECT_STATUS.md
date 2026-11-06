@@ -34,5 +34,22 @@ Last updated: 2026-11-06
 - Real two-phone Wi-Fi testing and device-specific performance, thermal, battery and touch profiling.
 - Final release signing and store-ready release build.
 
+## APK content audit — 2026-11-06
+
+The APK built from commit `bb552632d57669feea869181e2d619b96309feaa` was downloaded and inspected directly:
+- APK file size: 24,292,960 bytes (about 23.17 MiB).
+- GitHub Actions artifact ZIP: 24,051,994 bytes (contains the APK).
+- APK contains 92 entries; the Godot ARM64 native library is the dominant payload.
+- Project source tree contains only 17 tracked files. The game payload in `assets/` is only the original SVG logo; there is no imported library of production 3D character, environment, vegetation, animal, texture, animation or audio assets.
+- The current world is primarily generated from primitive meshes and procedural code. This is a functional prototype, not the agreed high-quality visual target.
+- Do not interpret APK size as evidence of visual completeness. Do not inflate package size with dummy or duplicate files.
+
+Required art/content milestone before calling the game visually advanced:
+1. Create and integrate a coherent, original 3D player character and real animation set.
+2. Replace placeholder vegetation, rocks, buildings and wildlife with consistent quality 3D assets and proper materials.
+3. Add terrain materials, foliage variation, water, sky/weather effects and environment audio.
+4. Profile texture/model memory and APK size on Android; use compressed textures, LODs and asset bundles appropriately.
+5. Verify the visual result in actual Android gameplay, not only automated scene tests.
+
 ## Test APK
 A debug test APK was generated from an earlier tested source commit. The newest source includes journey waypoint guidance and is being rebuilt. Any APK shared from this project is a prototype for installation/playtesting, not a finished or store-ready release. The host phone must remain in the game during a Wi-Fi session; closing the host ends the session.
