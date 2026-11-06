@@ -22,6 +22,7 @@ var gait_time := 0.0
 var pressed_actions: Dictionary = {}
 var hud_label: Label
 var health_bar: ProgressBar
+var survival_bars: Dictionary = {}
 var mobile_controls: Control
 var world_environment: Environment
 var sky_material: ProceduralSkyMaterial
@@ -832,6 +833,9 @@ func _create_hud() -> void:
     health_bar.show_percentage = false
     health_bar.custom_minimum_size.y = 12.0
     hud_column.add_child(health_bar)
+    survival_bars["food"] = _create_survival_bar(hud_column, "FOOD", hunger)
+    survival_bars["water"] = _create_survival_bar(hud_column, "WATER", thirst)
+    survival_bars["rest"] = _create_survival_bar(hud_column, "REST", rest)
 
     mobile_controls = Control.new()
     mobile_controls.name = "TouchLabels"
@@ -856,6 +860,26 @@ func _create_hud() -> void:
     _create_settings_panel(layer)
     _create_build_panel(layer)
     _create_minimap(layer)
+
+func _create_survival_bar(parent: VBoxContainer, caption: String, initial_value: float) -> ProgressBar:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 8)
+    var title := Label.new()
+    title.text = caption
+    title.custom_minimum_size.x = 58.0
+    title.add_theme_font_size_override("font_size", 11)
+    row.add_child(title)
+    var bar := ProgressBar.new()
+    bar.min_value = 0.0
+    bar.max_value = 100.0
+    bar.value = initial_value
+    bar.show_percentage = true
+    bar.custom_minimum_size.y = 10.0
+    bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    bar.add_theme_font_size_override("font_size", 10)
+    row.add_child(bar)
+    parent.add_child(row)
+    return bar
 
 func _create_virtual_joystick(screen_size: Vector2) -> void:
     joystick_center = Vector2(screen_size.x * 0.16, screen_size.y * 0.79)
@@ -1468,6 +1492,12 @@ func _process(delta: float) -> void:
         ]
         if health_bar:
             health_bar.value = health
+        if survival_bars.has("food"):
+            (survival_bars["food"] as ProgressBar).value = hunger
+        if survival_bars.has("water"):
+            (survival_bars["water"] as ProgressBar).value = thirst
+        if survival_bars.has("rest"):
+            (survival_bars["rest"] as ProgressBar).value = rest
 
 
 func _nearest_interaction_for(position: Vector3) -> Dictionary:
@@ -3660,7 +3690,7 @@ func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facin
 
 
 func _start_gameplay_smoke_test() -> void:
-    if resource_nodes.size() < 11 or wildlife_agents.size() < 27 or village_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null:
+    if resource_nodes.size() < 11 or wildlife_agents.size() < 27 or village_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null or survival_bars.size() != 3:
         push_error("GAMEPLAY_SMOKE_FAIL: resources or crafting interface missing")
         get_tree().quit(1)
         return
