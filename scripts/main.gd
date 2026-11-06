@@ -79,6 +79,11 @@ func _ready() -> void:
     _load_game()
     _apply_quality_preset(0)
     Engine.max_fps = current_fps_target
+    var command_args := OS.get_cmdline_user_args()
+    if command_args.has("--lan-smoke-host"):
+        call_deferred("_start_lan_smoke_host")
+    elif command_args.has("--lan-smoke-client"):
+        call_deferred("_start_lan_smoke_client")
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
@@ -1192,6 +1197,8 @@ func _on_connected_to_server() -> void:
     lan_active = true
     _set_network_status("Connected  •  Synchronizing world...")
     rpc_id(1, "_rpc_request_player_roster")
+    if OS.get_cmdline_user_args().has("--lan-smoke-client"):
+        get_tree().create_timer(1.2).timeout.connect(_move_lan_smoke_client)
 
 func _on_connection_failed() -> void:
     _disconnect_lan_game()
@@ -1344,6 +1351,62 @@ func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facin
     world_clock = fposmod(synced_clock, 24.0)
 
 
+
+
+func _start_lan_smoke_host() -> void:
+    _host_lan_game()
+    if not lan_active:
+        push_error("LAN_SMOKE_HOST_FAIL: host could not bind UDP port")
+        get_tree().quit(1)
+        return
+    print("LAN_SMOKE_HOST_READY")
+    get_tree().create_timer(8.0).timeout.connect(_finish_lan_smoke_host)
+
+func _start_lan_smoke_client() -> void:
+    address_input.text = "127.0.0.1"
+    _join_lan_game()
+    if not lan_active:
+        push_error("LAN_SMOKE_CLIENT_FAIL: client could not start")
+        get_tree().quit(1)
+        return
+    print("LAN_SMOKE_CLIENT_STARTED")
+    get_tree().create_timer(6.0).timeout.connect(_finish_lan_smoke_client)
+
+func _move_lan_smoke_client() -> void:
+    if not lan_active or multiplayer.is_server():
+        return
+    player.global_position = Vector3(31.0, _height_at(31.0, -11.0) + 1.2, -11.0)
+    print("LAN_SMOKE_CLIENT_MOVED")
+
+func _finish_lan_smoke_client() -> void:
+    if lan_active and multiplayer.get_unique_id() > 1 and network_remote_players.has(1):
+        print("LAN_SMOKE_CLIENT_PASS")
+        _disconnect_lan_game()
+        get_tree().quit(0)
+    else:
+        push_error("LAN_SMOKE_CLIENT_FAIL: host avatar or connection missing")
+        get_tree().quit(1)
+
+func _finish_lan_smoke_host() -> void:
+    var peers := multiplayer.get_peers()
+    if peers.size() != 1:
+        push_error("LAN_SMOKE_HOST_FAIL: expected one connected client, got %d" % peers.size())
+        get_tree().quit(1)
+        return
+    var remote_id: int = peers[0]
+    if not network_remote_players.has(remote_id):
+        push_error("LAN_SMOKE_HOST_FAIL: remote avatar was not created")
+        get_tree().quit(1)
+        return
+    var remote_avatar: Node3D = network_remote_players[remote_id]
+    var moved_distance := Vector2(remote_avatar.position.x - 18.0, remote_avatar.position.z - 2.0).length()
+    if moved_distance < 2.0:
+        push_error("LAN_SMOKE_HOST_FAIL: player movement did not synchronize (%.2f)" % moved_distance)
+        get_tree().quit(1)
+        return
+    print("LAN_SMOKE_HOST_PASS  •  remote displacement %.2f" % moved_distance)
+    _disconnect_lan_game()
+    get_tree().quit(0)
 
 func _save_game() -> void:
     if not player:
