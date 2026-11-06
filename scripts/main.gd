@@ -413,10 +413,6 @@ func _physics_process(delta: float) -> void:
     else:
         player.velocity.y = 0.0
 
-    if direction.length_squared() > 0.001:
-        var target_angle := atan2(-direction.x, -direction.z)
-        player.rotation.y = lerp_angle(player.rotation.y, target_angle, delta * 10.0)
-
     player.move_and_slide()
 
 func _button_down(action: String) -> bool:
