@@ -307,9 +307,48 @@ func _create_terrain() -> void:
     # and establishes the same tile size planned for the larger world.
     var chunks_per_axis := 2
     var steps_per_chunk: int = int(GRID_STEPS / float(chunks_per_axis))
-    var terrain_material := StandardMaterial3D.new()
-    terrain_material.vertex_color_use_as_albedo = true
-    terrain_material.roughness = 1.0
+    var terrain_shader := Shader.new()
+    terrain_shader.code = """
+shader_type spatial;
+render_mode diffuse_burley, specular_schlick_ggx;
+varying vec3 terrain_world_position;
+varying vec4 biome_vertex_color;
+
+float hash_grid(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+float value_noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 uv = fract(p);
+    uv = uv * uv * (3.0 - 2.0 * uv);
+    float a = hash_grid(cell);
+    float b = hash_grid(cell + vec2(1.0, 0.0));
+    float c = hash_grid(cell + vec2(0.0, 1.0));
+    float d = hash_grid(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, uv.x), mix(c, d, uv.x), uv.y);
+}
+void vertex() {
+    terrain_world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    biome_vertex_color = COLOR;
+}
+void fragment() {
+    float broad = value_noise(terrain_world_position.xz * 0.035);
+    float medium = value_noise(terrain_world_position.xz * 0.24);
+    float fine = value_noise(terrain_world_position.xz * 1.4);
+    float grain = value_noise(terrain_world_position.xz * 4.0);
+    vec3 albedo = biome_vertex_color.rgb;
+    albedo *= mix(0.80, 1.13, broad);
+    albedo *= mix(0.92, 1.08, medium);
+    albedo *= mix(0.96, 1.04, fine);
+    float mineral_grain = smoothstep(0.72, 0.94, grain) * 0.10;
+    albedo = mix(albedo, albedo * vec3(0.74, 0.78, 0.76), mineral_grain);
+    ALBEDO = albedo;
+    ROUGHNESS = 0.96;
+    METALLIC = 0.0;
+}
+"""
+    var terrain_material := ShaderMaterial.new()
+    terrain_material.shader = terrain_shader
     var step := WORLD_SIZE / float(GRID_STEPS)
 
     for chunk_z in range(chunks_per_axis):
@@ -649,6 +688,8 @@ func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
     var crown_mesh := SphereMesh.new()
     crown_mesh.radius = 1.05
     crown_mesh.height = 2.0
+    crown_mesh.radial_segments = 12
+    crown_mesh.rings = 8
 
     var leaves := StandardMaterial3D.new()
     leaves.albedo_color = Color(0.12, 0.31, 0.15)
@@ -659,7 +700,7 @@ func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
     crown_multi.transform_format = MultiMesh.TRANSFORM_3D
     crown_multi.use_colors = true
     crown_multi.mesh = crown_mesh
-    crown_multi.instance_count = tree_positions.size()
+    crown_multi.instance_count = tree_positions.size() * 3
 
     var tree_rng := RandomNumberGenerator.new()
     tree_rng.seed = 20261107
@@ -673,15 +714,28 @@ func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
         trunk_multi.set_instance_transform(i, trunk_transform)
         trunk_multi.set_instance_color(i, Color(0.23, 0.13, 0.075).lerp(Color(0.38, 0.24, 0.13), tree_rng.randf() * 0.55))
 
-        var crown_scale := Vector3(
-            tree_scale * tree_rng.randf_range(0.92, 1.28),
-            tree_scale * tree_rng.randf_range(0.88, 1.25),
-            tree_scale * tree_rng.randf_range(0.92, 1.30)
-        )
-        var crown_basis := Basis.from_euler(Vector3(0.0, tree_rng.randf_range(0.0, TAU), 0.0)).scaled(crown_scale)
-        var crown_transform := Transform3D(crown_basis, tree_position + Vector3(0, 2.45 * tree_scale, 0))
-        crown_multi.set_instance_transform(i, crown_transform)
-        crown_multi.set_instance_color(i, Color(0.075, 0.24, 0.105).lerp(Color(0.24, 0.42, 0.16), tree_rng.randf() * 0.8))
+        for lobe in range(3):
+            var lobe_offset := Vector3.ZERO
+            var lobe_factor := Vector3.ONE
+            if lobe == 0:
+                lobe_offset = Vector3(0.0, 2.47, 0.0)
+                lobe_factor = Vector3(1.0, 1.08, 1.0)
+            elif lobe == 1:
+                lobe_offset = Vector3(-0.56, 2.20, 0.10)
+                lobe_factor = Vector3(0.78, 0.82, 0.86)
+            else:
+                lobe_offset = Vector3(0.54, 2.28, 0.06)
+                lobe_factor = Vector3(0.82, 0.88, 0.80)
+            var crown_scale := Vector3(
+                tree_scale * tree_rng.randf_range(0.92, 1.14) * lobe_factor.x,
+                tree_scale * tree_rng.randf_range(0.88, 1.16) * lobe_factor.y,
+                tree_scale * tree_rng.randf_range(0.92, 1.18) * lobe_factor.z
+            )
+            var crown_basis := Basis.from_euler(Vector3(0.0, tree_rng.randf_range(0.0, TAU), 0.0)).scaled(crown_scale)
+            var crown_transform := Transform3D(crown_basis, tree_position + lobe_offset * tree_scale)
+            var crown_index := i * 3 + lobe
+            crown_multi.set_instance_transform(crown_index, crown_transform)
+            crown_multi.set_instance_color(crown_index, Color(0.075, 0.24, 0.105).lerp(Color(0.24, 0.42, 0.16), tree_rng.randf() * 0.8))
 
     tree_trunks = MultiMeshInstance3D.new()
     tree_trunks.name = "TreeTrunks"
@@ -743,8 +797,8 @@ func _create_environment_details() -> void:
     var rock_mesh := SphereMesh.new()
     rock_mesh.radius = 0.72
     rock_mesh.height = 1.0
-    rock_mesh.radial_segments = 8
-    rock_mesh.rings = 4
+    rock_mesh.radial_segments = 12
+    rock_mesh.rings = 8
     var rock_multi := MultiMesh.new()
     rock_multi.transform_format = MultiMesh.TRANSFORM_3D
     rock_multi.use_colors = true
@@ -5045,7 +5099,7 @@ func _set_tree_density(density: float) -> void:
     if tree_trunks and tree_trunks.multimesh:
         tree_trunks.multimesh.visible_instance_count = visible_count
     if tree_canopies and tree_canopies.multimesh:
-        tree_canopies.multimesh.visible_instance_count = visible_count
+        tree_canopies.multimesh.visible_instance_count = visible_count * 3
     var visible_pines := clampi(roundi(float(total_pine_instances) * current_tree_density), 1, maxi(1, total_pine_instances))
     if pine_trunks and pine_trunks.multimesh:
         pine_trunks.multimesh.visible_instance_count = visible_pines
