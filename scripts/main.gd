@@ -3055,7 +3055,7 @@ func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facin
 
 
 func _start_gameplay_smoke_test() -> void:
-    if resource_nodes.size() < 11 or wildlife_agents.size() < 8 or village_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null:
+    if resource_nodes.size() < 11 or wildlife_agents.size() < 27 or village_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null:
         push_error("GAMEPLAY_SMOKE_FAIL: resources or crafting interface missing")
         get_tree().quit(1)
         return
