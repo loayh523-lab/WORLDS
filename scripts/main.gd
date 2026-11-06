@@ -3362,6 +3362,17 @@ func _update_day_cycle(delta: float) -> void:
     sky_material.ground_bottom_color = Color(0.015, 0.025, 0.055).lerp(Color(0.12, 0.18, 0.15), daylight)
     sky_material.ground_horizon_color = Color(0.08, 0.11, 0.18).lerp(Color(0.48, 0.58, 0.48), daylight)
 
+func _camera_relative_direction(input_vector: Vector2) -> Vector3:
+    if not camera or input_vector.length_squared() < 0.0001:
+        return Vector3.ZERO
+    var camera_forward := -camera.global_transform.basis.z
+    var camera_right := camera.global_transform.basis.x
+    camera_forward.y = 0.0
+    camera_right.y = 0.0
+    camera_forward = camera_forward.normalized()
+    camera_right = camera_right.normalized()
+    return (camera_right * input_vector.x - camera_forward * input_vector.y).normalized()
+
 func _physics_process(delta: float) -> void:
     if not player or not camera:
         return
@@ -3375,15 +3386,7 @@ func _physics_process(delta: float) -> void:
     if horizontal.length() > 1.0:
         horizontal = horizontal.normalized()
 
-    var camera_forward := -camera.global_transform.basis.z
-    var camera_right := camera.global_transform.basis.x
-    camera_forward.y = 0.0
-    camera_right.y = 0.0
-    camera_forward = camera_forward.normalized()
-    camera_right = camera_right.normalized()
-
-    var direction := camera_right * horizontal.x - camera_forward * horizontal.y
-    direction = direction.normalized()
+    var direction := _camera_relative_direction(horizontal)
 
     var wants_sprint := _button_down("run") or Input.is_key_pressed(KEY_SHIFT)
     if wants_sprint and stamina > 0.0:
@@ -3699,6 +3702,23 @@ func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facin
 
 
 func _start_gameplay_smoke_test() -> void:
+    _update_virtual_joystick(joystick_center + Vector2(0.0, -52.0))
+    var forward_input_test := _camera_relative_direction(joystick_vector)
+    if joystick_vector.y > -0.98 or forward_input_test.z > -0.90:
+        push_error("GAMEPLAY_SMOKE_FAIL: mobile joystick forward input did not map to forward movement")
+        get_tree().quit(1)
+        return
+    _reset_virtual_joystick()
+    _on_control_pressed("run")
+    if not _button_down("run"):
+        push_error("GAMEPLAY_SMOKE_FAIL: sprint button did not activate")
+        get_tree().quit(1)
+        return
+    _on_control_released("run")
+    if _button_down("run"):
+        push_error("GAMEPLAY_SMOKE_FAIL: sprint button did not release")
+        get_tree().quit(1)
+        return
     if resource_nodes.size() < 11 or wildlife_agents.size() < 27 or village_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null or survival_bars.size() != 4:
         push_error("GAMEPLAY_SMOKE_FAIL: resources or crafting interface missing")
         get_tree().quit(1)
