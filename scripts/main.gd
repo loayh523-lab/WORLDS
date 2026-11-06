@@ -50,6 +50,10 @@ var shared_inventory: Dictionary = {"wood": 0, "stone": 0, "fiber": 0}
 var placed_buildings: Array[Dictionary] = []
 var inventory_label: Label
 var build_panel: PanelContainer
+var build_recipe_buttons: Dictionary = {}
+var build_rotation_offset := 0.0
+var build_preview: MeshInstance3D
+var build_preview_material: StandardMaterial3D
 var camp_position := Vector3.ZERO
 var memory_position := Vector3.ZERO
 var memory_awakened := false
@@ -1292,6 +1296,7 @@ func _process(delta: float) -> void:
     _update_survival(delta)
     _update_network(delta)
     _update_remote_players(delta)
+    _update_build_preview()
     _update_wildlife(delta)
     _update_adaptive_quality(delta)
     metrics_refresh_timer += delta
@@ -1714,7 +1719,8 @@ func _server_place_building(build_type: String, actor_position: Vector3, actor_f
             _show_status_note("Not enough materials for this structure.")
             return
 
-    var forward := Vector3(sin(actor_facing), 0.0, -cos(actor_facing))
+    var facing := actor_facing + build_rotation_offset
+    var forward := Vector3(sin(facing), 0.0, -cos(facing))
     var placement := actor_position + forward * 4.0
     placement.x = clampf(placement.x, -WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
     placement.z = clampf(placement.z, -WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
@@ -1735,12 +1741,12 @@ func _server_place_building(build_type: String, actor_position: Vector3, actor_f
     for key in recipe:
         shared_inventory[key] = int(shared_inventory.get(key, 0)) - int(recipe[key])
 
-    _spawn_building_visual(build_type, placement, actor_facing, true)
+    _spawn_building_visual(build_type, placement, facing, true)
     _update_inventory_ui()
     _show_status_note("Structure placed. The shared world has changed.")
     if lan_active and multiplayer.is_server():
         rpc("_rpc_set_shared_inventory", shared_inventory)
-        rpc("_rpc_spawn_building", build_type, placement, actor_facing)
+        rpc("_rpc_spawn_building", build_type, placement, facing)
     _save_game()
 
 func _spawn_building_visual(build_type: String, position: Vector3, facing: float, record: bool) -> void:
@@ -1954,23 +1960,39 @@ func _create_build_panel(layer: CanvasLayer) -> void:
     hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(hint)
 
+    var rotate_row := HBoxContainer.new()
+    var rotate_left := Button.new()
+    rotate_left.text = "ROTATE  -15°"
+    rotate_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    rotate_left.pressed.connect(_rotate_build_preview.bind(-15.0))
+    rotate_row.add_child(rotate_left)
+    var rotate_right := Button.new()
+    rotate_right.text = "ROTATE  +15°"
+    rotate_right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    rotate_right.pressed.connect(_rotate_build_preview.bind(15.0))
+    rotate_row.add_child(rotate_right)
+    column.add_child(rotate_row)
+
     var fire_button := Button.new()
     fire_button.text = "PLACE CAMPFIRE  •  3 WOOD + 2 STONE"
     fire_button.custom_minimum_size.y = 46.0
     fire_button.pressed.connect(_request_build.bind("campfire"))
     column.add_child(fire_button)
+    build_recipe_buttons["campfire"] = fire_button
 
     var crate_button := Button.new()
     crate_button.text = "PLACE STORAGE CRATE  •  5 WOOD + 2 STONE"
     crate_button.custom_minimum_size.y = 46.0
     crate_button.pressed.connect(_request_build.bind("storage"))
     column.add_child(crate_button)
+    build_recipe_buttons["storage"] = crate_button
 
     var shelter_button := Button.new()
     shelter_button.text = "PLACE WOOD SHELTER  •  12 WOOD + 6 FIBER + 4 STONE"
     shelter_button.custom_minimum_size.y = 46.0
     shelter_button.pressed.connect(_request_build.bind("shelter"))
     column.add_child(shelter_button)
+    build_recipe_buttons["shelter"] = shelter_button
 
     var close_button := Button.new()
     close_button.text = "CLOSE"
@@ -1978,6 +2000,51 @@ func _create_build_panel(layer: CanvasLayer) -> void:
     column.add_child(close_button)
 
     _update_inventory_ui()
+    _create_build_preview()
+
+func _create_build_preview() -> void:
+    var preview_mesh := CylinderMesh.new()
+    preview_mesh.top_radius = 1.25
+    preview_mesh.bottom_radius = 1.25
+    preview_mesh.height = 0.035
+    build_preview = MeshInstance3D.new()
+    build_preview.name = "BuildPlacementPreview"
+    build_preview.mesh = preview_mesh
+    build_preview_material = StandardMaterial3D.new()
+    build_preview_material.albedo_color = Color(0.28, 0.88, 0.63, 0.32)
+    build_preview_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    build_preview_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    build_preview_material.no_depth_test = true
+    build_preview.material_override = build_preview_material
+    build_preview.visible = false
+    add_child(build_preview)
+
+func _rotate_build_preview(degrees: float) -> void:
+    build_rotation_offset = fposmod(build_rotation_offset + deg_to_rad(degrees), TAU)
+    _show_status_note("Build rotation: %d°" % roundi(rad_to_deg(build_rotation_offset)))
+
+func _update_build_preview() -> void:
+    if not build_preview or not player or not build_panel or not build_panel.visible:
+        if build_preview:
+            build_preview.visible = false
+        return
+    var facing := player.rotation.y + build_rotation_offset
+    var forward := Vector3(sin(facing), 0.0, -cos(facing))
+    var target := player.global_position + forward * 4.0
+    target.x = clampf(target.x, -WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+    target.z = clampf(target.z, -WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+    target.y = _height_at(target.x, target.z) + 0.035
+    build_preview.global_position = target
+    build_preview.rotation.y = facing
+    var river_center := sin(target.z * 0.018) * 18.0
+    var blocked := absf(target.x - river_center) < 9.0
+    for building in placed_buildings:
+        var other: Vector3 = building["position"]
+        if Vector2(target.x, target.z).distance_to(Vector2(other.x, other.z)) < 3.4:
+            blocked = true
+            break
+    build_preview_material.albedo_color = Color(0.92, 0.25, 0.20, 0.36) if blocked else Color(0.28, 0.88, 0.63, 0.32)
+    build_preview.visible = true
 
 func _toggle_build_panel(visible_state: bool) -> void:
     if build_panel:
@@ -1992,6 +2059,15 @@ func _update_inventory_ui() -> void:
             int(shared_inventory.get("stone", 0)),
             int(shared_inventory.get("fiber", 0))
         ]
+    for build_type in build_recipe_buttons:
+        var recipe := _get_build_recipe(str(build_type))
+        var can_afford := true
+        for material in recipe:
+            if int(shared_inventory.get(material, 0)) < int(recipe[material]):
+                can_afford = false
+                break
+        var recipe_button: Button = build_recipe_buttons[build_type]
+        recipe_button.disabled = not can_afford
 
 func _create_wildlife() -> void:
     wildlife_rng.seed = 20261110
