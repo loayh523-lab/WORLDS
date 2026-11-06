@@ -79,6 +79,8 @@ var save_elapsed := 0.0
 var quality_index := 0
 var current_render_scale := 0.76
 var adaptive_check_timer := 0.0
+var wildlife_update_accumulator := 0.0
+var village_update_accumulator := 0.0
 var hud_refresh_timer := 0.0
 var current_fps_target := 60
 var lan_smoke_client_passed := false
@@ -2510,14 +2512,33 @@ func _create_village() -> void:
         })
 
 func _update_village_agents(delta: float) -> void:
+    if village_agents.is_empty():
+        return
+
+    # Villager routines are intentionally lower frequency than player movement.
+    village_update_accumulator += delta
+    if village_update_accumulator < 0.16:
+        return
+    var step_delta := minf(village_update_accumulator, 0.32)
+    village_update_accumulator = 0.0
+
     for index in range(village_agents.size()):
         var villager: Dictionary = village_agents[index]
         var root: Node3D = villager["root"]
         if not is_instance_valid(root):
             continue
+
+        if player:
+            var distance_squared := root.global_position.distance_squared_to(player.global_position)
+            root.visible = distance_squared <= 155.0 * 155.0
+            if distance_squared > 110.0 * 110.0:
+                villager["timer"] = maxf(0.0, float(villager["timer"]) - step_delta)
+                village_agents[index] = villager
+                continue
+
         var home: Vector3 = villager["home"]
         var target: Vector3 = villager["target"]
-        var timer := float(villager["timer"]) - delta
+        var timer := float(villager["timer"]) - step_delta
         if timer <= 0.0 or Vector2(root.position.x - target.x, root.position.z - target.z).length() < 0.55:
             var angle := randf() * TAU
             var distance := randf_range(1.5, 7.0)
@@ -2525,9 +2546,9 @@ func _update_village_agents(delta: float) -> void:
             timer = randf_range(2.0, 6.0)
         var direction := Vector3(target.x - root.position.x, 0.0, target.z - root.position.z)
         if direction.length() > 0.12:
-            root.position += direction.normalized() * float(villager["speed"]) * delta
-            root.rotation.y = lerp_angle(root.rotation.y, atan2(-direction.x, -direction.z), minf(1.0, delta * 3.0))
-        root.position.y = lerpf(root.position.y, _height_at(root.position.x, root.position.z), minf(1.0, delta * 8.0))
+            root.position += direction.normalized() * float(villager["speed"]) * step_delta
+            root.rotation.y = lerp_angle(root.rotation.y, atan2(-direction.x, -direction.z), minf(1.0, step_delta * 3.0))
+        root.position.y = lerpf(root.position.y, _height_at(root.position.x, root.position.z), minf(1.0, step_delta * 8.0))
         villager["target"] = target
         villager["timer"] = timer
         village_agents[index] = villager
@@ -2550,20 +2571,43 @@ func _constrain_wildlife_target(target: Vector3, origin: Vector3) -> Vector3:
 func _update_wildlife(delta: float) -> void:
     if wildlife_agents.is_empty():
         return
+
+    # Wildlife uses a 10 Hz simulation budget instead of doing all AI work every render frame.
+    wildlife_update_accumulator += delta
+    if wildlife_update_accumulator < 0.10:
+        return
+    var step_delta := minf(wildlife_update_accumulator, 0.25)
+    wildlife_update_accumulator = 0.0
+
     for index in range(wildlife_agents.size()):
         var animal: Dictionary = wildlife_agents[index]
         var root: Node3D = animal["root"]
-        if not is_instance_valid(root) or not root.visible:
+        if not is_instance_valid(root):
             continue
 
-        var timer := float(animal["timer"]) - delta
+        var timer := float(animal["timer"]) - step_delta
+        if player:
+            var distance_squared := root.global_position.distance_squared_to(player.global_position)
+            # Keep distant wildlife out of the render and AI workload on mobile.
+            if distance_squared > 120.0 * 120.0:
+                root.visible = false
+                animal["timer"] = maxf(0.0, timer)
+                wildlife_agents[index] = animal
+                continue
+            root.visible = true
+            if distance_squared > 100.0 * 100.0:
+                animal["timer"] = maxf(0.0, timer)
+                wildlife_agents[index] = animal
+                continue
+
         var target: Vector3 = animal["target"]
         var away := Vector3.ZERO
         var fleeing := false
         if player:
             var from_player := root.global_position - player.global_position
             from_player.y = 0.0
-            if from_player.length() < 11.0 and from_player.length() > 0.1:
+            var player_distance_squared := from_player.length_squared()
+            if player_distance_squared < 11.0 * 11.0 and player_distance_squared > 0.01:
                 fleeing = true
                 away = from_player.normalized()
 
@@ -2581,13 +2625,13 @@ func _update_wildlife(delta: float) -> void:
         var direction := Vector3(target.x - root.position.x, 0.0, target.z - root.position.z)
         var animal_speed := 3.8 if fleeing else float(animal["speed"])
         if direction.length() > 0.1:
-            var movement := direction.normalized() * animal_speed * delta
+            var movement := direction.normalized() * animal_speed * step_delta
             root.position.x += movement.x
             root.position.z += movement.z
             var target_angle := atan2(-direction.x, -direction.z)
-            root.rotation.y = lerp_angle(root.rotation.y, target_angle, minf(1.0, delta * 4.0))
+            root.rotation.y = lerp_angle(root.rotation.y, target_angle, minf(1.0, step_delta * 4.0))
         var ground_height := _height_at(root.position.x, root.position.z)
-        root.position.y = lerpf(root.position.y, ground_height, minf(1.0, delta * 8.0))
+        root.position.y = lerpf(root.position.y, ground_height, minf(1.0, step_delta * 8.0))
         animal["target"] = target
         animal["timer"] = timer
         wildlife_agents[index] = animal
@@ -3352,8 +3396,8 @@ func _apply_quality_preset(index: int) -> void:
     var shadows := false
     var fog_enabled := true
     match index:
-        0: # Auto starts from a safe balanced profile; the adaptive loop tunes it.
-            density = 0.70 if OS.get_processor_count() <= 4 else 0.82
+        0: # Auto favors stable frame pacing on Android; PC can retain more scene density.
+            density = 0.62 if OS.get_name() == "Android" else (0.70 if OS.get_processor_count() <= 4 else 0.82)
             shadows = false
             fog_enabled = true
         1: # Low
@@ -3398,13 +3442,6 @@ func _set_tree_density(density: float) -> void:
         grass_field.multimesh.visible_instance_count = clampi(roundi(float(total_grass_instances) * current_tree_density), 1, total_grass_instances)
     if rock_field and rock_field.multimesh:
         rock_field.multimesh.visible_instance_count = clampi(roundi(float(total_rock_instances) * current_tree_density), 1, total_rock_instances)
-    var visible_animals := clampi(roundi(float(wildlife_agents.size()) * current_tree_density), 0, wildlife_agents.size())
-    for index in range(wildlife_agents.size()):
-        var animal: Dictionary = wildlife_agents[index]
-        var root: Node3D = animal["root"]
-        if is_instance_valid(root):
-            root.visible = index < visible_animals
-
 func _on_fps_selected(index: int) -> void:
     current_fps_target = fps_option.get_item_id(index)
     Engine.max_fps = current_fps_target
@@ -3421,14 +3458,16 @@ func _update_adaptive_quality(delta: float) -> void:
 
     var actual_fps := Engine.get_frames_per_second()
     var next_density := current_tree_density
-    if actual_fps > 0 and actual_fps < float(current_fps_target) * 0.78:
-        next_density = maxf(0.40, current_tree_density - 0.08)
+    if actual_fps > 0 and actual_fps < float(current_fps_target) * 0.88:
+        next_density = maxf(0.40, current_tree_density - 0.06)
         if sun_light:
             sun_light.shadow_enabled = false
         if world_environment:
             world_environment.fog_enabled = false
-    elif actual_fps >= float(current_fps_target) * 0.96:
-        next_density = minf(0.90, current_tree_density + 0.025)
+    elif actual_fps >= float(current_fps_target) * 0.97:
+        next_density = minf(0.76 if OS.get_name() == "Android" else 0.90, current_tree_density + 0.02)
+        if world_environment and quality_index == 0:
+            world_environment.fog_enabled = true
 
     if not is_equal_approx(next_density, current_tree_density):
         _set_tree_density(next_density)
