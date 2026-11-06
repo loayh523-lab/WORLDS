@@ -60,6 +60,7 @@ var current_render_scale := 0.76
 var adaptive_check_timer := 0.0
 var hud_refresh_timer := 0.0
 var current_fps_target := 60
+var lan_smoke_client_passed := false
 
 func _ready() -> void:
     multiplayer.peer_connected.connect(_on_peer_connected)
@@ -1207,6 +1208,9 @@ func _on_connection_failed() -> void:
 func _on_server_disconnected() -> void:
     _disconnect_lan_game()
     _set_network_status("Host disconnected  •  Session ended")
+    if OS.get_cmdline_user_args().has("--lan-smoke-client") and lan_smoke_client_passed:
+        print("LAN_SMOKE_CLIENT_EXIT_PASS")
+        get_tree().quit(0)
 
 func _create_remote_player_visual(peer_id: int, spawn_position: Vector3, facing: float) -> Node3D:
     var avatar := Node3D.new()
@@ -1360,7 +1364,7 @@ func _start_lan_smoke_host() -> void:
         get_tree().quit(1)
         return
     print("LAN_SMOKE_HOST_READY")
-    get_tree().create_timer(8.0).timeout.connect(_finish_lan_smoke_host)
+    get_tree().create_timer(12.0).timeout.connect(_finish_lan_smoke_host)
 
 func _start_lan_smoke_client() -> void:
     address_input.text = "127.0.0.1"
@@ -1370,7 +1374,7 @@ func _start_lan_smoke_client() -> void:
         get_tree().quit(1)
         return
     print("LAN_SMOKE_CLIENT_STARTED")
-    get_tree().create_timer(6.0).timeout.connect(_finish_lan_smoke_client)
+    get_tree().create_timer(8.0).timeout.connect(_finish_lan_smoke_client)
 
 func _move_lan_smoke_client() -> void:
     if not lan_active or multiplayer.is_server():
@@ -1380,9 +1384,8 @@ func _move_lan_smoke_client() -> void:
 
 func _finish_lan_smoke_client() -> void:
     if lan_active and multiplayer.get_unique_id() > 1 and network_remote_players.has(1):
+        lan_smoke_client_passed = true
         print("LAN_SMOKE_CLIENT_PASS")
-        _disconnect_lan_game()
-        get_tree().quit(0)
     else:
         push_error("LAN_SMOKE_CLIENT_FAIL: host avatar or connection missing")
         get_tree().quit(1)
