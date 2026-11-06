@@ -623,6 +623,113 @@ func _process(delta: float) -> void:
             note
         ]
 
+
+func _nearest_interaction_for(position: Vector3) -> Dictionary:
+    var best_distance := INF
+    var result := {"action": "", "index": -1}
+
+    var river_center := sin(position.z * 0.035) * 8.0
+    var river_distance: float = absf(position.x - river_center)
+    if river_distance < 5.5 and absf(position.z) < WORLD_SIZE * 0.5:
+        best_distance = river_distance
+        result["action"] = "drink"
+
+    for index in range(berry_bushes.size()):
+        var bush: Dictionary = berry_bushes[index]
+        if int(bush["servings"]) <= 0:
+            continue
+        var bush_position: Vector3 = bush["position"]
+        var distance := Vector2(position.x - bush_position.x, position.z - bush_position.z).length()
+        if distance < 3.8 and distance < best_distance:
+            best_distance = distance
+            result["action"] = "forage"
+            result["index"] = index
+
+    if not memory_awakened:
+        var memory_distance := Vector2(position.x - memory_position.x, position.z - memory_position.z).length()
+        if memory_distance < 4.5 and memory_distance < best_distance:
+            best_distance = memory_distance
+            result["action"] = "memory"
+            result["index"] = -1
+
+    var camp_distance := Vector2(position.x - camp_position.x, position.z - camp_position.z).length()
+    if camp_distance < 4.5 and camp_distance < best_distance:
+        result["action"] = "sleep"
+        result["index"] = -1
+
+    return result
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_request_interaction() -> void:
+    if not multiplayer.is_server():
+        return
+    var sender := multiplayer.get_remote_sender_id()
+    if not network_remote_players.has(sender):
+        return
+    var remote_avatar: Node3D = network_remote_players[sender]
+    if not is_instance_valid(remote_avatar):
+        return
+
+    var nearby := _nearest_interaction_for(remote_avatar.global_position)
+    var action: String = nearby["action"]
+    match action:
+        "drink":
+            rpc_id(sender, "_rpc_apply_personal_interaction", "drink")
+        "forage":
+            var bush_index := int(nearby["index"])
+            var bush: Dictionary = berry_bushes[bush_index]
+            var remaining := maxi(0, int(bush["servings"]) - 1)
+            bush["servings"] = remaining
+            berry_bushes[bush_index] = bush
+            rpc("_rpc_set_berry_servings", bush_index, remaining)
+            rpc_id(sender, "_rpc_apply_personal_interaction", "forage")
+        "sleep":
+            world_clock = 7.0
+            rpc("_rpc_set_shared_clock", world_clock)
+            rpc_id(sender, "_rpc_apply_personal_interaction", "sleep")
+        "memory":
+            _apply_world_memory()
+            rpc("_rpc_world_memory_activated")
+        _:
+            rpc_id(sender, "_rpc_apply_personal_interaction", "nothing")
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_apply_personal_interaction(action: String) -> void:
+    match action:
+        "drink":
+            thirst = minf(100.0, thirst + 42.0)
+            _show_status_note("You drank water from the river.")
+        "forage":
+            hunger = minf(100.0, hunger + 34.0)
+            _show_status_note("You gathered wild berries.")
+        "sleep":
+            rest = 100.0
+            hunger = maxf(0.0, hunger - 7.0)
+            thirst = maxf(0.0, thirst - 10.0)
+            _show_status_note("You rested at the campsite.")
+        _:
+            _show_status_note("Nothing nearby to use.")
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_berry_servings(index: int, servings: int) -> void:
+    if index < 0 or index >= berry_bushes.size():
+        return
+    var bush: Dictionary = berry_bushes[index]
+    bush["servings"] = clampi(servings, 0, 3)
+    berry_bushes[index] = bush
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_shared_clock(new_clock: float) -> void:
+    world_clock = fposmod(new_clock, 24.0)
+
+func _broadcast_shared_world_state() -> void:
+    if not lan_active or not multiplayer.is_server():
+        return
+    rpc("_rpc_set_shared_clock", world_clock)
+    for index in range(berry_bushes.size()):
+        var bush: Dictionary = berry_bushes[index]
+        rpc("_rpc_set_berry_servings", index, int(bush["servings"]))
+
 func _update_survival(delta: float) -> void:
     # Needs decline slowly so exploration stays relaxed rather than punishing.
     hunger = max(0.0, hunger - delta * 0.012)
@@ -688,6 +795,10 @@ func _nearest_interaction() -> String:
     return best_action
 
 func _try_interact() -> void:
+    if lan_active and not multiplayer.is_server():
+        rpc_id(1, "_rpc_request_interaction")
+        return
+
     match _nearest_interaction():
         "drink":
             thirst = min(100.0, thirst + 42.0)
@@ -723,6 +834,9 @@ func _try_interact() -> void:
             _awaken_world_memory()
         _:
             _show_status_note("Nothing nearby to use.")
+
+    if lan_active and multiplayer.is_server():
+        _broadcast_shared_world_state()
 
 func _show_status_note(message: String) -> void:
     status_note = message
@@ -861,9 +975,19 @@ func _create_memory_stone() -> void:
     add_child(memory_crystal)
 
 func _awaken_world_memory() -> void:
+    if lan_active and not multiplayer.is_server():
+        rpc_id(1, "_rpc_request_interaction")
+        return
+    _apply_world_memory()
+    if lan_active and multiplayer.is_server():
+        rpc("_rpc_world_memory_activated")
+
+func _apply_world_memory() -> void:
     if memory_awakened:
         return
     memory_awakened = true
+    if is_instance_valid(memory_crystal):
+        memory_crystal.visible = false
 
     var trail_mesh := SphereMesh.new()
     trail_mesh.radius = 0.18
@@ -1201,6 +1325,119 @@ func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facin
     _set_remote_player_target(peer_id, world_position, facing)
     world_clock = fposmod(synced_clock, 24.0)
 
+
+
+func _save_game() -> void:
+    if not player:
+        return
+    var config := ConfigFile.new()
+    config.set_value("world", "clock", world_clock)
+    config.set_value("world", "memory_awakened", memory_awakened)
+    config.set_value("player", "hunger", hunger)
+    config.set_value("player", "thirst", thirst)
+    config.set_value("player", "rest", rest)
+    config.set_value("player", "position", player.global_position)
+
+    var berry_servings: Array[int] = []
+    for bush in berry_bushes:
+        berry_servings.append(int(bush["servings"]))
+    config.set_value("world", "berry_servings", berry_servings)
+
+    var error := config.save(SAVE_PATH)
+    if error == OK:
+        save_elapsed = 0.0
+    else:
+        push_warning("Could not save WORLDS progress. Error: %d" % error)
+
+func _load_game() -> void:
+    if not player:
+        return
+    var config := ConfigFile.new()
+    if config.load(SAVE_PATH) != OK:
+        return
+
+    world_clock = fposmod(float(config.get_value("world", "clock", world_clock)), 24.0)
+    hunger = clampf(float(config.get_value("player", "hunger", hunger)), 0.0, 100.0)
+    thirst = clampf(float(config.get_value("player", "thirst", thirst)), 0.0, 100.0)
+    rest = clampf(float(config.get_value("player", "rest", rest)), 0.0, 100.0)
+
+    var saved_position: Variant = config.get_value("player", "position", player.global_position)
+    if typeof(saved_position) == TYPE_VECTOR3:
+        var restored_position: Vector3 = saved_position
+        restored_position.x = clampf(restored_position.x, -WORLD_SIZE * 0.48, WORLD_SIZE * 0.48)
+        restored_position.z = clampf(restored_position.z, -WORLD_SIZE * 0.48, WORLD_SIZE * 0.48)
+        restored_position.y = _height_at(restored_position.x, restored_position.z) + 1.2
+        player.global_position = restored_position
+
+    var saved_berries: Variant = config.get_value("world", "berry_servings", [])
+    if saved_berries is Array:
+        for index in range(mini(saved_berries.size(), berry_bushes.size())):
+            var bush: Dictionary = berry_bushes[index]
+            bush["servings"] = clampi(int(saved_berries[index]), 0, 3)
+            berry_bushes[index] = bush
+
+    if bool(config.get_value("world", "memory_awakened", false)):
+        _apply_world_memory()
+    save_elapsed = 0.0
+
+func _on_quality_selected(index: int) -> void:
+    _apply_quality_preset(index)
+
+func _apply_quality_preset(index: int) -> void:
+    quality_index = index
+    var render_scale := 0.76
+    var shadows := false
+    match index:
+        0:
+            render_scale = 0.76
+            shadows = false
+        1:
+            render_scale = 0.62
+            shadows = false
+        2:
+            render_scale = 0.78
+            shadows = false
+        3:
+            render_scale = 0.90
+            shadows = true
+        4:
+            render_scale = 1.0
+            shadows = true
+    current_render_scale = render_scale
+    get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+    get_viewport().scaling_3d_scale = current_render_scale
+    if sun_light:
+        sun_light.shadow_enabled = shadows
+    if world_environment:
+        world_environment.fog_enabled = index >= 2
+        world_environment.fog_density = 0.0022 if index <= 2 else 0.0028
+
+func _on_fps_selected(index: int) -> void:
+    current_fps_target = fps_option.get_item_id(index)
+    Engine.max_fps = current_fps_target
+    if fps_label:
+        fps_label.text = "FPS cap: %d  •  Device limit may be lower" % current_fps_target
+
+func _update_adaptive_quality(delta: float) -> void:
+    if quality_index != 0:
+        return
+    adaptive_check_timer += delta
+    if adaptive_check_timer < 3.0:
+        return
+    adaptive_check_timer = 0.0
+
+    var actual_fps := Engine.get_frames_per_second()
+    var new_scale := current_render_scale
+    if actual_fps > 0 and actual_fps < float(current_fps_target) * 0.78:
+        new_scale = maxf(0.58, current_render_scale - 0.06)
+    elif actual_fps >= float(current_fps_target) * 0.96:
+        new_scale = minf(0.92, current_render_scale + 0.025)
+
+    if not is_equal_approx(new_scale, current_render_scale):
+        current_render_scale = new_scale
+        get_viewport().scaling_3d_scale = current_render_scale
+    if fps_label:
+        fps_label.text = "Auto  •  %d FPS  •  Render %.2f" % [actual_fps, current_render_scale]
 
 func _button_down(action: String) -> bool:
     return pressed_actions.has(action)
