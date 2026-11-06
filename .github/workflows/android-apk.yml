@@ -42,12 +42,15 @@ jobs:
           # v4 no longer requests the retired SDK "tools" package.
           packages: platform-tools
 
-      - name: Install Android build packages
+      - name: Install Godot Android build packages
         run: |
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-34" \
-            "build-tools;34.0.0"
+            "build-tools;34.0.0" \
+            "cmdline-tools;latest" \
+            "cmake;3.10.2.4988404" \
+            "ndk;23.2.8568313"
 
       - name: Set up Godot and matching export templates
         uses: chickensoft-games/setup-godot@v2
@@ -67,11 +70,28 @@ jobs:
           export/android/java_sdk_path = "$JAVA_HOME"
           EOF
 
+      - name: Create temporary Android debug signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -noprompt \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storetype JKS \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey" >> "$GITHUB_ENV"
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android" >> "$GITHUB_ENV"
+
       - name: Import and export debug APK
         run: |
           mkdir -p build
           godot --headless --editor --path . --quit
-          godot --headless --path . --export-debug "Android" build/WORLDS-debug.apk
+          godot --headless --verbose --path . --export-debug "Android" build/WORLDS-debug.apk
           test -s build/WORLDS-debug.apk
 
       - name: Upload APK artifact
