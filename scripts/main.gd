@@ -14,6 +14,10 @@ const SAVE_PATH := "user://worlds_save.cfg"
 var player: CharacterBody3D
 var player_name := "Wanderer"
 var player_name_input: LineEdit
+var outfit_option: OptionButton
+var player_outfit_index := 0
+var player_torso: MeshInstance3D
+var network_player_outfits: Dictionary = {1: 0}
 var master_volume_slider: HSlider
 var camera_pivot: Node3D
 var camera: Camera3D
@@ -782,9 +786,10 @@ func _create_player() -> void:
     visual.name = "CharacterVisual"
     player.add_child(visual)
 
-    var torso := _make_capsule_part(0.34, 1.12, Color(0.16, 0.30, 0.23))
-    torso.position = Vector3(0, 1.16, 0)
-    visual.add_child(torso)
+    player_torso = _make_capsule_part(0.34, 1.12, Color(0.16, 0.30, 0.23))
+    player_torso.name = "PlayerTorso"
+    player_torso.position = Vector3(0, 1.16, 0)
+    visual.add_child(player_torso)
 
     var head := MeshInstance3D.new()
     var head_mesh := SphereMesh.new()
@@ -817,6 +822,7 @@ func _create_player() -> void:
     right_arm.position = Vector3(0.40, 1.25, 0)
     right_arm.rotation.z = PI * 0.5
     visual.add_child(right_arm)
+    _apply_player_outfit()
 
     left_leg = _make_capsule_part(0.15, 0.82, Color(0.18, 0.20, 0.21))
     left_leg.position = Vector3(-0.17, 0.43, 0)
@@ -1034,6 +1040,23 @@ func _create_main_menu() -> void:
     welcome.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     welcome.add_theme_font_size_override("font_size", 20)
     column.add_child(welcome)
+
+    var outfit_caption := Label.new()
+    outfit_caption.text = "CHOOSE YOUR EXPLORER STYLE"
+    outfit_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    outfit_caption.add_theme_font_size_override("font_size", 12)
+    outfit_caption.add_theme_color_override("font_color", Color(0.72, 0.84, 0.76))
+    column.add_child(outfit_caption)
+
+    outfit_option = OptionButton.new()
+    outfit_option.name = "ExplorerStyle"
+    outfit_option.add_item("Forest Scout", 0)
+    outfit_option.add_item("River Wanderer", 1)
+    outfit_option.add_item("Amber Trail", 2)
+    outfit_option.add_item("Midnight Pine", 3)
+    outfit_option.select(player_outfit_index)
+    outfit_option.item_selected.connect(_on_outfit_selected)
+    column.add_child(outfit_option)
 
     var start_button := Button.new()
     start_button.text = "CONTINUE EXPLORING"
@@ -1468,6 +1491,66 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     network_back_button.pressed.connect(_return_to_main_menu)
     column.add_child(network_back_button)
     network_panel.visible = false
+
+func _get_player_outfit_color(index: int) -> Color:
+    var palette: Array[Color] = [
+        Color(0.16, 0.30, 0.23),
+        Color(0.13, 0.34, 0.43),
+        Color(0.55, 0.29, 0.13),
+        Color(0.22, 0.23, 0.38)
+    ]
+    return palette[clampi(index, 0, palette.size() - 1)]
+
+func _apply_player_outfit() -> void:
+    var outfit_material := StandardMaterial3D.new()
+    outfit_material.albedo_color = _get_player_outfit_color(player_outfit_index)
+    outfit_material.roughness = 0.9
+    if player_torso:
+        player_torso.material_override = outfit_material
+    if left_arm:
+        left_arm.material_override = outfit_material
+    if right_arm:
+        right_arm.material_override = outfit_material
+
+func _on_outfit_selected(index: int) -> void:
+    player_outfit_index = clampi(index, 0, 3)
+    if outfit_option:
+        outfit_option.select(player_outfit_index)
+    _apply_player_outfit()
+    if lan_active:
+        if multiplayer.is_server():
+            network_player_outfits[1] = player_outfit_index
+            rpc("_rpc_set_remote_player_outfit", 1, player_outfit_index)
+        elif multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+            rpc_id(1, "_rpc_submit_player_outfit", player_outfit_index)
+    _save_game()
+
+func _apply_remote_player_outfit(peer_id: int, index: int) -> void:
+    network_player_outfits[peer_id] = clampi(index, 0, 3)
+    if not network_remote_players.has(peer_id):
+        return
+    var avatar := network_remote_players[peer_id] as Node3D
+    var body := avatar.find_child("RemoteBody", true, false) as MeshInstance3D
+    if body:
+        var material := StandardMaterial3D.new()
+        material.albedo_color = _get_player_outfit_color(index)
+        material.roughness = 0.9
+        body.material_override = material
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_submit_player_outfit(requested_index: int) -> void:
+    if not multiplayer.is_server():
+        return
+    var sender := multiplayer.get_remote_sender_id()
+    if sender <= 1:
+        return
+    var safe_index := clampi(requested_index, 0, 3)
+    _apply_remote_player_outfit(sender, safe_index)
+    rpc("_rpc_set_remote_player_outfit", sender, safe_index)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_remote_player_outfit(peer_id: int, outfit_index: int) -> void:
+    _apply_remote_player_outfit(peer_id, outfit_index)
 
 func _apply_player_name() -> void:
     if not player_name_input:
@@ -3993,6 +4076,7 @@ func _on_peer_connected(peer_id: int) -> void:
 func _on_peer_disconnected(peer_id: int) -> void:
     _remove_remote_player(peer_id)
     network_player_names.erase(peer_id)
+    network_player_outfits.erase(peer_id)
     if multiplayer.is_server():
         rpc("_rpc_remove_remote_player", peer_id)
     _set_network_status("Player left  •  %d/8 players" % (multiplayer.get_peers().size() + 1) if multiplayer.is_server() else "A player left the world")
@@ -4002,6 +4086,7 @@ func _on_connected_to_server() -> void:
     _set_network_status("Connected  •  Synchronizing world...")
     rpc_id(1, "_rpc_request_player_roster")
     rpc_id(1, "_rpc_submit_player_name", player_name)
+    rpc_id(1, "_rpc_submit_player_outfit", player_outfit_index)
     if OS.get_cmdline_user_args().has("--lan-smoke-client"):
         get_tree().create_timer(1.2).timeout.connect(_move_lan_smoke_client)
 
@@ -4027,13 +4112,14 @@ func _create_remote_player_visual(peer_id: int, spawn_position: Vector3, facing:
     avatar.rotation.y = facing
 
     var body := MeshInstance3D.new()
+    body.name = "RemoteBody"
     var body_mesh := CapsuleMesh.new()
     body_mesh.radius = 0.34
     body_mesh.height = 1.16
     body.mesh = body_mesh
     body.position.y = 1.16
     var body_material := StandardMaterial3D.new()
-    body_material.albedo_color = Color(0.20, 0.42, 0.72) if peer_id % 2 == 0 else Color(0.66, 0.38, 0.18)
+    body_material.albedo_color = _get_player_outfit_color(int(network_player_outfits.get(peer_id, peer_id % 4)))
     body.material_override = body_material
     avatar.add_child(body)
 
@@ -4120,6 +4206,7 @@ func _rpc_request_player_roster() -> void:
     var requester := multiplayer.get_remote_sender_id()
     rpc_id(requester, "_rpc_spawn_remote_player", 1, player.global_position, player.rotation.y)
     rpc_id(requester, "_rpc_set_remote_player_name", 1, player_name)
+    rpc_id(requester, "_rpc_set_remote_player_outfit", 1, player_outfit_index)
     for peer_id in network_remote_players.keys():
         if int(peer_id) == requester:
             continue
@@ -4127,6 +4214,7 @@ func _rpc_request_player_roster() -> void:
         if is_instance_valid(avatar):
             rpc_id(requester, "_rpc_spawn_remote_player", int(peer_id), avatar.global_position, avatar.rotation.y)
             rpc_id(requester, "_rpc_set_remote_player_name", int(peer_id), str(network_player_names.get(peer_id, "PLAYER %d" % int(peer_id))))
+            rpc_id(requester, "_rpc_set_remote_player_outfit", int(peer_id), int(network_player_outfits.get(peer_id, 0)))
     rpc_id(requester, "_rpc_set_shared_clock", world_clock)
     rpc_id(requester, "_rpc_set_shared_inventory", shared_inventory)
     for index in range(berry_bushes.size()):
@@ -4220,11 +4308,16 @@ func _start_gameplay_smoke_test() -> void:
         push_error("GAMEPLAY_SMOKE_FAIL: sprint button did not release")
         get_tree().quit(1)
         return
-    if main_menu_layer == null or not main_menu_layer.visible or network_panel == null or network_panel.visible or settings_panel == null or settings_panel.visible or LAN_MAX_CLIENTS != 7:
+    if main_menu_layer == null or not main_menu_layer.visible or network_panel == null or network_panel.visible or settings_panel == null or settings_panel.visible or LAN_MAX_CLIENTS != 7 or outfit_option == null:
         push_error("GAMEPLAY_SMOKE_FAIL: mobile menu, Wi-Fi panel defaults, or LAN capacity configuration is incorrect")
         get_tree().quit(1)
         return
 
+    _on_outfit_selected(2)
+    if player_outfit_index != 2 or not is_equal_approx((player_torso.material_override as StandardMaterial3D).albedo_color.r, _get_player_outfit_color(2).r):
+        push_error("GAMEPLAY_SMOKE_FAIL: explorer outfit selection did not update the player")
+        get_tree().quit(1)
+        return
     if get_node_or_null("HUD/OpenMainMenu") == null:
         push_error("GAMEPLAY_SMOKE_FAIL: in-game menu shortcut is missing")
         get_tree().quit(1)
@@ -4580,6 +4673,7 @@ func _save_game() -> void:
     config.set_value("world", "journey_visited_crossing", journey_visited_crossing)
     config.set_value("world", "journey_met_villager", journey_met_villager)
     config.set_value("player", "name", player_name)
+    config.set_value("player", "outfit_index", player_outfit_index)
     config.set_value("player", "health", health)
     config.set_value("player", "hunger", hunger)
     config.set_value("player", "thirst", thirst)
@@ -4624,6 +4718,10 @@ func _load_game() -> void:
         return
 
     player_name = str(config.get_value("player", "name", player_name)).strip_edges()
+    player_outfit_index = clampi(int(config.get_value("player", "outfit_index", player_outfit_index)), 0, 3)
+    _apply_player_outfit()
+    if outfit_option:
+        outfit_option.select(player_outfit_index)
     if player_name.is_empty():
         player_name = "Wanderer"
     if player_name_input:
