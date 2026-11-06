@@ -919,6 +919,15 @@ func _create_hud() -> void:
     hud_column.add_theme_constant_override("separation", 3)
     panel.add_child(hud_column)
 
+    var brand_logo := TextureRect.new()
+    brand_logo.name = "WorldsBrandLogo"
+    brand_logo.texture = load("res://assets/worlds_logo.svg")
+    brand_logo.custom_minimum_size = Vector2(220.0, 67.0)
+    brand_logo.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+    brand_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    brand_logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    hud_column.add_child(brand_logo)
+
     hud_label = Label.new()
     hud_label.text = "WORLDS  •  CONNECTING WORLD"
     hud_label.add_theme_color_override("font_color", Color(0.92, 0.95, 0.88))
