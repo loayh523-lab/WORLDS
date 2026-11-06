@@ -43,6 +43,7 @@ var health := 100.0
 var hunger := 100.0
 var thirst := 100.0
 var rest := 100.0
+var stamina := 100.0
 var berry_bushes: Array[Dictionary] = []
 var resource_nodes: Array[Dictionary] = []
 var wildlife_agents: Array[Dictionary] = []
@@ -836,6 +837,7 @@ func _create_hud() -> void:
     survival_bars["food"] = _create_survival_bar(hud_column, "FOOD", hunger)
     survival_bars["water"] = _create_survival_bar(hud_column, "WATER", thirst)
     survival_bars["rest"] = _create_survival_bar(hud_column, "REST", rest)
+    survival_bars["energy"] = _create_survival_bar(hud_column, "ENERGY", stamina)
 
     mobile_controls = Control.new()
     mobile_controls.name = "TouchLabels"
@@ -1498,6 +1500,8 @@ func _process(delta: float) -> void:
             (survival_bars["water"] as ProgressBar).value = thirst
         if survival_bars.has("rest"):
             (survival_bars["rest"] as ProgressBar).value = rest
+        if survival_bars.has("energy"):
+            (survival_bars["energy"] as ProgressBar).value = stamina
 
 
 func _nearest_interaction_for(position: Vector3) -> Dictionary:
@@ -3381,7 +3385,12 @@ func _physics_process(delta: float) -> void:
     var direction := camera_right * horizontal.x - camera_forward * horizontal.y
     direction = direction.normalized()
 
-    var move_speed := PLAYER_SPEED * (1.48 if _button_down("run") or Input.is_key_pressed(KEY_SHIFT) else 1.0)
+    var wants_sprint := _button_down("run") or Input.is_key_pressed(KEY_SHIFT)
+    if wants_sprint and stamina > 0.0:
+        stamina = maxf(0.0, stamina - delta * 13.0)
+    else:
+        stamina = minf(100.0, stamina + delta * 10.0)
+    var move_speed := PLAYER_SPEED * (1.48 if wants_sprint and stamina > 0.0 else 1.0)
     var target_horizontal_velocity := Vector2(direction.x, direction.z) * move_speed
     player.velocity.x = move_toward(player.velocity.x, target_horizontal_velocity.x, 28.0 * delta)
     player.velocity.z = move_toward(player.velocity.z, target_horizontal_velocity.y, 28.0 * delta)
@@ -3690,7 +3699,7 @@ func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facin
 
 
 func _start_gameplay_smoke_test() -> void:
-    if resource_nodes.size() < 11 or wildlife_agents.size() < 27 or village_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null or survival_bars.size() != 3:
+    if resource_nodes.size() < 11 or wildlife_agents.size() < 27 or village_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null or survival_bars.size() != 4:
         push_error("GAMEPLAY_SMOKE_FAIL: resources or crafting interface missing")
         get_tree().quit(1)
         return
@@ -3937,6 +3946,7 @@ func _save_game() -> void:
     config.set_value("player", "hunger", hunger)
     config.set_value("player", "thirst", thirst)
     config.set_value("player", "rest", rest)
+    config.set_value("player", "stamina", stamina)
     config.set_value("player", "position", player.global_position)
     config.set_value("controls", "camera_sensitivity", camera_sensitivity)
     config.set_value("controls", "camera_distance", camera_distance)
@@ -3979,6 +3989,7 @@ func _load_game() -> void:
     if health_bar:
         health_bar.value = health
     rest = clampf(float(config.get_value("player", "rest", rest)), 0.0, 100.0)
+    stamina = clampf(float(config.get_value("player", "stamina", stamina)), 0.0, 100.0)
     camera_sensitivity = clampf(float(config.get_value("controls", "camera_sensitivity", camera_sensitivity)), 0.003, 0.012)
     camera_distance = clampf(float(config.get_value("controls", "camera_distance", camera_distance)), 4.0, 12.0)
     camera_fov = clampf(float(config.get_value("controls", "camera_fov", camera_fov)), 55.0, 85.0)
