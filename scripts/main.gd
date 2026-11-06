@@ -17,12 +17,24 @@ var world_environment: Environment
 var sky_material: ProceduralSkyMaterial
 var sun_light: DirectionalLight3D
 var world_clock := 8.0
+var hunger := 100.0
+var thirst := 100.0
+var rest := 100.0
+var berry_bushes: Array[Dictionary] = []
+var camp_position := Vector3.ZERO
+var memory_position := Vector3.ZERO
+var memory_awakened := false
+var status_note := ""
+var status_note_time := 0.0
 
 func _ready() -> void:
     _create_environment()
     _create_terrain()
     _create_river()
     _create_forest()
+    _create_foraging_bushes()
+    _create_campsite()
+    _create_memory_stone()
     _create_player()
     _create_hud()
 
@@ -307,6 +319,7 @@ func _create_hud() -> void:
     _add_control_button("▶", Vector2(144, screen_size.y - 112), "right")
     _add_control_button("▲", Vector2(84, screen_size.y - 172), "forward")
     _add_control_button("▼", Vector2(84, screen_size.y - 52), "back")
+    _add_control_button("USE", Vector2(screen_size.x - 132, screen_size.y - 178), "interact", true)
     _add_control_button("JUMP", Vector2(screen_size.x - 136, screen_size.y - 104), "jump", true)
 
 func _add_control_button(label_text: String, position: Vector2, action: String, is_jump := false) -> void:
@@ -322,13 +335,18 @@ func _add_control_button(label_text: String, position: Vector2, action: String, 
     mobile_controls.add_child(button)
 
 func _on_control_pressed(action: String) -> void:
+    if action == "interact":
+        _try_interact()
+        return
     pressed_actions[action] = true
 
 func _on_control_released(action: String) -> void:
     pressed_actions.erase(action)
 
 func _input(event: InputEvent) -> void:
-    if event is InputEventScreenDrag:
+    if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
+        _try_interact()
+    elif event is InputEventScreenDrag:
         _rotate_camera(event.relative, event.position)
     elif event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
         _rotate_camera(event.relative, event.position)
@@ -353,15 +371,289 @@ func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
 
 func _process(delta: float) -> void:
     _update_day_cycle(delta)
+    _update_survival(delta)
+    if status_note_time > 0.0:
+        status_note_time = max(0.0, status_note_time - delta)
     if hud_label and player:
         var hours := int(world_clock)
         var minutes := int((world_clock - float(hours)) * 60.0)
         var time_text := "%02d:%02d" % [hours, minutes]
-        hud_label.text = "WORLDS  •  PROTOTYPE\nWorld time: %s   •   Position: %d, %d" % [
+        var prompt := _get_interaction_prompt()
+        var note := status_note if status_note_time > 0.0 else prompt
+        hud_label.text = "WORLDS  •  PROTOTYPE  |  %s\nFood %d%%   Water %d%%   Rest %d%%\n%s" % [
             time_text,
-            roundi(player.position.x),
-            roundi(player.position.z)
+            roundi(hunger),
+            roundi(thirst),
+            roundi(rest),
+            note
         ]
+
+func _update_survival(delta: float) -> void:
+    # Needs decline slowly so exploration stays relaxed rather than punishing.
+    hunger = max(0.0, hunger - delta * 0.012)
+    thirst = max(0.0, thirst - delta * 0.022)
+    rest = max(0.0, rest - delta * 0.016)
+
+func _get_interaction_prompt() -> String:
+    match _nearest_interaction():
+        "drink":
+            return "USE / E: Drink from the river"
+        "forage":
+            return "USE / E: Gather wild berries"
+        "sleep":
+            return "USE / E: Rest at the campsite"
+        "memory":
+            return "USE / E: Listen to the world's memory"
+        _:
+            if memory_awakened:
+                return "Explore the valley and follow the glowing memory trail"
+            return "Explore the valley"
+
+func _nearest_interaction() -> String:
+    if not player:
+        return ""
+
+    var best_distance := INF
+    var best_action := ""
+
+    var river_center := sin(player.position.z * 0.035) * 8.0
+    var river_distance := abs(player.position.x - river_center)
+    if river_distance < 5.5 and abs(player.position.z) < WORLD_SIZE * 0.5:
+        best_distance = river_distance
+        best_action = "drink"
+
+    for bush in berry_bushes:
+        if int(bush["servings"]) <= 0:
+            continue
+        var bush_position: Vector3 = bush["position"]
+        var distance := Vector2(
+            player.position.x - bush_position.x,
+            player.position.z - bush_position.z
+        ).length()
+        if distance < 3.8 and distance < best_distance:
+            best_distance = distance
+            best_action = "forage"
+
+    if not memory_awakened:
+        var memory_distance := Vector2(
+            player.position.x - memory_position.x,
+            player.position.z - memory_position.z
+        ).length()
+        if memory_distance < 4.5 and memory_distance < best_distance:
+            best_distance = memory_distance
+            best_action = "memory"
+
+    var camp_distance := Vector2(
+        player.position.x - camp_position.x,
+        player.position.z - camp_position.z
+    ).length()
+    if camp_distance < 4.5 and camp_distance < best_distance:
+        best_action = "sleep"
+
+    return best_action
+
+func _try_interact() -> void:
+    match _nearest_interaction():
+        "drink":
+            thirst = min(100.0, thirst + 42.0)
+            _show_status_note("You drank fresh water.")
+        "forage":
+            var nearest_index := -1
+            var nearest_distance := INF
+            for i in range(berry_bushes.size()):
+                var bush: Dictionary = berry_bushes[i]
+                if int(bush["servings"]) <= 0:
+                    continue
+                var bush_position: Vector3 = bush["position"]
+                var distance := Vector2(
+                    player.position.x - bush_position.x,
+                    player.position.z - bush_position.z
+                ).length()
+                if distance < nearest_distance:
+                    nearest_distance = distance
+                    nearest_index = i
+            if nearest_index >= 0:
+                var selected: Dictionary = berry_bushes[nearest_index]
+                selected["servings"] = int(selected["servings"]) - 1
+                berry_bushes[nearest_index] = selected
+                hunger = min(100.0, hunger + 34.0)
+                _show_status_note("You gathered and ate wild berries.")
+        "sleep":
+            world_clock = 7.0
+            rest = 100.0
+            hunger = max(0.0, hunger - 7.0)
+            thirst = max(0.0, thirst - 10.0)
+            _show_status_note("You rested at the campsite until morning.")
+        "memory":
+            _awaken_world_memory()
+        _:
+            _show_status_note("Nothing nearby to use.")
+
+func _show_status_note(message: String) -> void:
+    status_note = message
+    status_note_time = 3.5
+
+func _create_foraging_bushes() -> void:
+    var locations := [
+        Vector2(-17.0, -14.0),
+        Vector2(31.0, 14.0),
+        Vector2(-37.0, 29.0),
+        Vector2(39.0, -34.0)
+    ]
+    for location in locations:
+        var bush_position := Vector3(
+            location.x,
+            _height_at(location.x, location.y),
+            location.y
+        )
+        berry_bushes.append({
+            "position": bush_position,
+            "servings": 3
+        })
+
+        var shrub := MeshInstance3D.new()
+        var shrub_mesh := SphereMesh.new()
+        shrub_mesh.radius = 0.72
+        shrub_mesh.height = 0.95
+        shrub.mesh = shrub_mesh
+        shrub.position = bush_position + Vector3(0, 0.55, 0)
+        var shrub_material := StandardMaterial3D.new()
+        shrub_material.albedo_color = Color(0.13, 0.29, 0.12)
+        shrub_material.roughness = 1.0
+        shrub.material_override = shrub_material
+        add_child(shrub)
+
+        for berry_index in range(5):
+            var berry := MeshInstance3D.new()
+            var berry_mesh := SphereMesh.new()
+            berry_mesh.radius = 0.12
+            berry_mesh.height = 0.18
+            berry.mesh = berry_mesh
+            var angle := TAU * float(berry_index) / 5.0
+            berry.position = bush_position + Vector3(
+                cos(angle) * 0.48,
+                0.72 + float(berry_index % 2) * 0.18,
+                sin(angle) * 0.48
+            )
+            var berry_material := StandardMaterial3D.new()
+            berry_material.albedo_color = Color(0.68, 0.12, 0.16)
+            berry_material.roughness = 0.7
+            berry.material_override = berry_material
+            add_child(berry)
+
+func _create_campsite() -> void:
+    camp_position = Vector3(18.0, _height_at(18.0, 0.0), 0.0)
+
+    var bedroll := MeshInstance3D.new()
+    var bedroll_mesh := BoxMesh.new()
+    bedroll_mesh.size = Vector3(2.2, 0.16, 1.0)
+    bedroll.mesh = bedroll_mesh
+    bedroll.position = camp_position + Vector3(2.3, 0.12, 0.0)
+    var bedroll_material := StandardMaterial3D.new()
+    bedroll_material.albedo_color = Color(0.46, 0.34, 0.21)
+    bedroll.material_override = bedroll_material
+    add_child(bedroll)
+
+    for i in range(3):
+        var log := MeshInstance3D.new()
+        var log_mesh := CylinderMesh.new()
+        log_mesh.top_radius = 0.15
+        log_mesh.bottom_radius = 0.15
+        log_mesh.height = 1.15
+        log.mesh = log_mesh
+        log.position = camp_position + Vector3(
+            cos(TAU * float(i) / 3.0) * 0.42,
+            0.18,
+            sin(TAU * float(i) / 3.0) * 0.42
+        )
+        log.rotation.z = PI * 0.5
+        var log_material := StandardMaterial3D.new()
+        log_material.albedo_color = Color(0.29, 0.17, 0.09)
+        log.material_override = log_material
+        add_child(log)
+
+    var fire := MeshInstance3D.new()
+    var fire_mesh := SphereMesh.new()
+    fire_mesh.radius = 0.32
+    fire_mesh.height = 0.72
+    fire.mesh = fire_mesh
+    fire.position = camp_position + Vector3(0, 0.42, 0)
+    var fire_material := StandardMaterial3D.new()
+    fire_material.albedo_color = Color(1.0, 0.31, 0.07)
+    fire_material.emission_enabled = true
+    fire_material.emission = Color(1.0, 0.16, 0.025)
+    fire_material.emission_energy_multiplier = 1.6
+    fire.material_override = fire_material
+    add_child(fire)
+
+    var fire_light := OmniLight3D.new()
+    fire_light.position = camp_position + Vector3(0, 1.0, 0)
+    fire_light.light_color = Color(1.0, 0.39, 0.12)
+    fire_light.light_energy = 0.75
+    fire_light.omni_range = 7.0
+    add_child(fire_light)
+
+func _create_memory_stone() -> void:
+    memory_position = Vector3(-26.0, _height_at(-26.0, -28.0), -28.0)
+
+    var stone := MeshInstance3D.new()
+    stone.name = "WorldMemoryStone"
+    var stone_mesh := CylinderMesh.new()
+    stone_mesh.top_radius = 0.65
+    stone_mesh.bottom_radius = 0.82
+    stone_mesh.height = 1.45
+    stone.mesh = stone_mesh
+    stone.position = memory_position + Vector3(0, 0.72, 0)
+    var stone_material := StandardMaterial3D.new()
+    stone_material.albedo_color = Color(0.27, 0.39, 0.38)
+    stone_material.roughness = 0.88
+    stone.material_override = stone_material
+    add_child(stone)
+
+    var crystal := MeshInstance3D.new()
+    var crystal_mesh := SphereMesh.new()
+    crystal_mesh.radius = 0.22
+    crystal_mesh.height = 0.52
+    crystal.mesh = crystal_mesh
+    crystal.position = memory_position + Vector3(0, 1.62, 0)
+    var crystal_material := StandardMaterial3D.new()
+    crystal_material.albedo_color = Color(0.20, 0.72, 0.66)
+    crystal_material.emission_enabled = true
+    crystal_material.emission = Color(0.08, 0.48, 0.42)
+    crystal_material.emission_energy_multiplier = 0.55
+    crystal.material_override = crystal_material
+    add_child(crystal)
+
+func _awaken_world_memory() -> void:
+    if memory_awakened:
+        return
+    memory_awakened = true
+
+    var trail_mesh := SphereMesh.new()
+    trail_mesh.radius = 0.18
+    trail_mesh.height = 0.36
+    var trail_material := StandardMaterial3D.new()
+    trail_material.albedo_color = Color(0.22, 0.92, 0.78)
+    trail_material.emission_enabled = true
+    trail_material.emission = Color(0.10, 0.72, 0.58)
+    trail_material.emission_energy_multiplier = 1.25
+
+    for i in range(12):
+        var progress := float(i) / 11.0
+        var trail_x := lerp(memory_position.x, -7.0, progress) + sin(progress * PI * 2.0) * 1.7
+        var trail_z := lerp(memory_position.z, -8.0, progress)
+        var marker := MeshInstance3D.new()
+        marker.mesh = trail_mesh
+        marker.material_override = trail_material
+        marker.position = Vector3(
+            trail_x,
+            _height_at(trail_x, trail_z) + 0.32 + sin(progress * PI) * 0.45,
+            trail_z
+        )
+        add_child(marker)
+
+    _show_status_note("A forgotten path returned to the world.")
+
 
 func _update_day_cycle(delta: float) -> void:
     if not sun_light or not world_environment or not sky_material:
