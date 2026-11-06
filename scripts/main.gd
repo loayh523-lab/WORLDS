@@ -783,6 +783,45 @@ func _create_player() -> void:
     backpack.material_override = backpack_material
     visual.add_child(backpack)
 
+    var scarf := _make_box_part(Vector3(0.54, 0.14, 0.43), Color(0.66, 0.30, 0.16))
+    scarf.position = Vector3(0.0, 1.64, -0.015)
+    visual.add_child(scarf)
+
+    var belt := _make_box_part(Vector3(0.68, 0.13, 0.40), Color(0.20, 0.14, 0.09))
+    belt.position = Vector3(0.0, 0.86, 0.0)
+    visual.add_child(belt)
+
+    var buckle := _make_box_part(Vector3(0.13, 0.12, 0.045), Color(0.78, 0.59, 0.27))
+    buckle.position = Vector3(0.0, 0.86, -0.218)
+    visual.add_child(buckle)
+
+    for boot_x in [-0.17, 0.17]:
+        var boot := _make_box_part(Vector3(0.34, 0.19, 0.48), Color(0.16, 0.12, 0.09))
+        boot.position = Vector3(boot_x, 0.12, -0.075)
+        visual.add_child(boot)
+
+    for hand_x in [-0.79, 0.79]:
+        var hand := MeshInstance3D.new()
+        var hand_mesh := SphereMesh.new()
+        hand_mesh.radius = 0.115
+        hand_mesh.height = 0.23
+        hand.mesh = hand_mesh
+        hand.position = Vector3(hand_x, 1.23, 0.0)
+        hand.material_override = skin_material
+        visual.add_child(hand)
+
+    var eye_material := StandardMaterial3D.new()
+    eye_material.albedo_color = Color(0.08, 0.07, 0.06)
+    for eye_x in [-0.085, 0.085]:
+        var eye := MeshInstance3D.new()
+        var eye_mesh := SphereMesh.new()
+        eye_mesh.radius = 0.026
+        eye_mesh.height = 0.052
+        eye.mesh = eye_mesh
+        eye.position = Vector3(eye_x, 1.91, -0.218)
+        eye.material_override = eye_material
+        visual.add_child(eye)
+
     camera_pivot = Node3D.new()
     camera_pivot.name = "CameraPivot"
     camera_pivot.position = player.position + Vector3(0, 1.55, 0)
@@ -794,6 +833,17 @@ func _create_player() -> void:
     camera.rotation_degrees = Vector3(-14, 0, 0)
     camera.current = true
     camera_pivot.add_child(camera)
+
+func _make_box_part(size: Vector3, color: Color) -> MeshInstance3D:
+    var part := MeshInstance3D.new()
+    var mesh := BoxMesh.new()
+    mesh.size = size
+    part.mesh = mesh
+    var material := StandardMaterial3D.new()
+    material.albedo_color = color
+    material.roughness = 0.9
+    part.material_override = material
+    return part
 
 func _make_capsule_part(radius: float, height: float, color: Color) -> MeshInstance3D:
     var part := MeshInstance3D.new()
