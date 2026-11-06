@@ -11,6 +11,7 @@ Last updated: 2026-11-06
 - Third-person player, mobile joystick, multitouch camera drag, sprint, jump, interaction and editable touch-button layout.
 - Starter village, simple NPCs and wildlife, gathering, survival needs, crafting/building, World Memory discovery and local autosave.
 - Main menu and project logo, saved player name, in-game menu shortcut, responsive menu sizing, settings and navigation.
+- Journey objectives now show live distance to the river crossing, nearest villager and memory stone; gameplay smoke test verifies the waypoint distance.
 - Four selectable explorer outfit color styles (Forest Scout, River Wanderer, Amber Trail, Midnight Pine), saved locally and synchronized to other LAN players.
 - Quality presets, FPS caps, camera controls, touch sizing/opacity, master volume and performance readout.
 - Direct Wi-Fi LAN host/join using ENet/UDP port 24560. The host displays and can copy its local IP.
@@ -18,11 +19,11 @@ Last updated: 2026-11-06
 - Session capacity is configured for 1 host + up to 7 guests; the current automated multiplayer smoke test exercises one host and one guest.
 
 ### Latest validation
-- Latest source commit tested: `16201742fc4b5d2223cb4c4321e606d1ff1f7d46`.
-- Godot 4.3 import/parse, main-scene, gameplay, persistence, LAN host/client, movement, shared gathering and player-name checks: **passed** in GitHub Actions run [42244508777](https://github.com/loayh523-lab/WORLDS/actions/runs/42244508777).
-- Android debug APK export: **passed** in GitHub Actions run [42244508907](https://github.com/loayh523-lab/WORLDS/actions/runs/42244508907).
-- Debug APK size: 24,288,864 bytes (about 23.2 MiB).
-- The APK was structurally checked as a valid Android package. It has not been installed or physically tested on an Android phone.
+- Latest source commit tested: `bb552632d57669feea869181e2d619b96309feaa`.
+- Godot 4.3 import/parse, main-scene, gameplay, persistence, LAN host/client, movement, shared gathering, outfit synchronization and journey waypoint checks: **passed** in GitHub Actions run [42245921756](https://github.com/loayh523-lab/WORLDS/actions/runs/42245921756).
+- Android debug APK export for this exact commit: **in progress** at the time of this update.
+- The previous successful debug APK was 24,051,277 bytes as a workflow artifact ZIP; this is not the installed APK size.
+- No physical Android install or two-phone Wi-Fi test has been performed.
 
 ### Still not complete / not verified
 - The planned 4 × 4 km world and dynamic chunk streaming.
@@ -34,4 +35,4 @@ Last updated: 2026-11-06
 - Final release signing and store-ready release build.
 
 ## Test APK
-A debug test APK was generated from the latest tested source commit. It is a prototype for installation/playtesting, not a finished or store-ready release. The host phone must remain in the game during a Wi-Fi session; closing the host ends the session.
+A debug test APK was generated from an earlier tested source commit. The newest source includes journey waypoint guidance and is being rebuilt. Any APK shared from this project is a prototype for installation/playtesting, not a finished or store-ready release. The host phone must remain in the game during a Wi-Fi session; closing the host ends the session.
