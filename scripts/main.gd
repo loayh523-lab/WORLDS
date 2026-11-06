@@ -6,6 +6,10 @@ const PLAYER_SPEED := 7.0
 const GRAVITY := 22.0
 const JUMP_VELOCITY := 8.0
 const CAMERA_DRAG_SENSITIVITY := 0.006
+const LAN_PORT := 24560
+const LAN_MAX_CLIENTS := 1
+const NETWORK_SEND_INTERVAL := 0.05
+const SAVE_PATH := "user://worlds_save.cfg"
 
 var player: CharacterBody3D
 var camera_pivot: Node3D
@@ -31,8 +35,34 @@ var memory_position := Vector3.ZERO
 var memory_awakened := false
 var status_note := ""
 var status_note_time := 0.0
+var touch_button_layer: Node2D
+var normal_touch_texture: Texture2D
+var pressed_touch_texture: Texture2D
+var network_panel: PanelContainer
+var network_status_label: Label
+var host_ip_label: Label
+var address_input: LineEdit
+var quality_option: OptionButton
+var fps_option: OptionButton
+var fps_label: Label
+var lan_active := false
+var network_send_timer := 0.0
+var network_remote_players: Dictionary = {}
+var network_remote_targets: Dictionary = {}
+var memory_crystal: MeshInstance3D
+var save_elapsed := 0.0
+var quality_index := 0
+var current_render_scale := 0.76
+var adaptive_check_timer := 0.0
+var hud_refresh_timer := 0.0
+var current_fps_target := 60
 
 func _ready() -> void:
+    multiplayer.peer_connected.connect(_on_peer_connected)
+    multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+    multiplayer.connected_to_server.connect(_on_connected_to_server)
+    multiplayer.connection_failed.connect(_on_connection_failed)
+    multiplayer.server_disconnected.connect(_on_server_disconnected)
     _create_environment()
     _create_terrain()
     _create_river()
@@ -42,10 +72,16 @@ func _ready() -> void:
     _create_memory_stone()
     _create_player()
     _create_hud()
+    _load_game()
+    _apply_quality_preset(0)
+    Engine.max_fps = current_fps_target
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
         pressed_actions.clear()
+        _save_game()
+    elif what == NOTIFICATION_WM_CLOSE_REQUEST:
+        _save_game()
 
 func _create_environment() -> void:
     var world_env := WorldEnvironment.new()
@@ -364,48 +400,177 @@ func _create_hud() -> void:
 
     var panel := PanelContainer.new()
     panel.position = Vector2(18, 18)
-    panel.custom_minimum_size = Vector2(250, 62)
+    panel.custom_minimum_size = Vector2(290, 94)
     layer.add_child(panel)
 
     hud_label = Label.new()
-    hud_label.text = "WORLDS  •  EARLY ACCESS PROTOTYPE\nExplore the valley"
+    hud_label.text = "WORLDS  •  CONNECTING WORLD"
     hud_label.add_theme_color_override("font_color", Color(0.92, 0.95, 0.88))
     hud_label.add_theme_font_size_override("font_size", 16)
+    hud_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     panel.add_child(hud_label)
 
     mobile_controls = Control.new()
-    mobile_controls.name = "TouchControls"
+    mobile_controls.name = "TouchLabels"
     mobile_controls.set_anchors_preset(Control.PRESET_FULL_RECT)
+    mobile_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
     layer.add_child(mobile_controls)
 
+    touch_button_layer = Node2D.new()
+    touch_button_layer.name = "MultiTouchButtons"
+    layer.add_child(touch_button_layer)
+
+    normal_touch_texture = _make_touch_texture(Color(0.08, 0.28, 0.25, 0.76))
+    pressed_touch_texture = _make_touch_texture(Color(0.16, 0.58, 0.46, 0.94))
     var screen_size := get_viewport().get_visible_rect().size
-    _add_control_button("◀", Vector2(24, screen_size.y - 112), "left")
-    _add_control_button("▶", Vector2(144, screen_size.y - 112), "right")
-    _add_control_button("▲", Vector2(84, screen_size.y - 172), "forward")
-    _add_control_button("▼", Vector2(84, screen_size.y - 52), "back")
-    _add_control_button("USE", Vector2(screen_size.x - 132, screen_size.y - 178), "interact", true)
-    _add_control_button("JUMP", Vector2(screen_size.x - 136, screen_size.y - 104), "jump", true)
+    _add_control_button("◀", Vector2(screen_size.x * 0.10, screen_size.y * 0.78), "left")
+    _add_control_button("▶", Vector2(screen_size.x * 0.22, screen_size.y * 0.78), "right")
+    _add_control_button("▲", Vector2(screen_size.x * 0.16, screen_size.y * 0.67), "forward")
+    _add_control_button("▼", Vector2(screen_size.x * 0.16, screen_size.y * 0.89), "back")
+    _add_control_button("USE", Vector2(screen_size.x * 0.88, screen_size.y * 0.71), "interact", true)
+    _add_control_button("JUMP", Vector2(screen_size.x * 0.88, screen_size.y * 0.86), "jump", true)
 
-func _add_control_button(label_text: String, position: Vector2, action: String, is_jump := false) -> void:
-    var button := Button.new()
-    button.text = label_text
-    button.position = position
-    button.custom_minimum_size = Vector2(56, 56) if not is_jump else Vector2(112, 64)
-    button.focus_mode = Control.FOCUS_NONE
-    button.modulate = Color(1.0, 1.0, 1.0, 0.82)
-    button.add_theme_font_size_override("font_size", 18 if not is_jump else 15)
-    button.button_down.connect(_on_control_pressed.bind(action))
-    button.button_up.connect(_on_control_released.bind(action))
-    mobile_controls.add_child(button)
+    _create_network_panel(layer)
+    _create_settings_panel(layer)
 
-func _on_control_pressed(action: String) -> void:
-    if action == "interact":
-        _try_interact()
-        return
-    pressed_actions[action] = true
+func _make_touch_texture(fill_color: Color) -> Texture2D:
+    var image := Image.create(112, 112, false, Image.FORMAT_RGBA8)
+    var edge_color := Color(0.86, 0.92, 0.82, 0.92)
+    for y in range(112):
+        for x in range(112):
+            var distance := Vector2(float(x) - 55.5, float(y) - 55.5).length()
+            if distance <= 53.0:
+                image.set_pixel(x, y, edge_color if distance >= 48.0 else fill_color)
+    return ImageTexture.create_from_image(image)
 
-func _on_control_released(action: String) -> void:
-    pressed_actions.erase(action)
+func _add_control_button(label_text: String, center: Vector2, action: String, is_action_button := false) -> void:
+    var button := TouchScreenButton.new()
+    button.name = "Touch_%s" % action
+    button.position = center
+    var hit_shape := CircleShape2D.new()
+    hit_shape.radius = 53.0 if is_action_button else 47.0
+    button.shape = hit_shape
+    button.texture_normal = normal_touch_texture
+    button.texture_pressed = pressed_touch_texture
+    button.visibility_mode = TouchScreenButton.VISIBILITY_TOUCHSCREEN_ONLY
+    button.pressed.connect(_on_control_pressed.bind(action))
+    button.released.connect(_on_control_released.bind(action))
+    touch_button_layer.add_child(button)
+
+    var caption := Label.new()
+    caption.text = label_text
+    caption.position = center - Vector2(42, 20)
+    caption.size = Vector2(84, 40)
+    caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    caption.add_theme_color_override("font_color", Color(0.98, 1.0, 0.94))
+    caption.add_theme_font_size_override("font_size", 14 if is_action_button else 27)
+    caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    mobile_controls.add_child(caption)
+
+func _create_network_panel(layer: CanvasLayer) -> void:
+    var screen_size := get_viewport().get_visible_rect().size
+    network_panel = PanelContainer.new()
+    network_panel.name = "LANPanel"
+    network_panel.position = Vector2(screen_size.x - 330.0, 18.0)
+    network_panel.custom_minimum_size = Vector2(310.0, 0.0)
+    layer.add_child(network_panel)
+
+    var column := VBoxContainer.new()
+    column.add_theme_constant_override("separation", 5)
+    network_panel.add_child(column)
+
+    var title := Label.new()
+    title.text = "WORLDS  •  PLAY TOGETHER"
+    title.add_theme_color_override("font_color", Color(0.75, 0.92, 0.78))
+    title.add_theme_font_size_override("font_size", 17)
+    column.add_child(title)
+
+    var host_button := Button.new()
+    host_button.text = "CREATE WORLD"
+    host_button.custom_minimum_size.y = 40
+    host_button.pressed.connect(_host_lan_game)
+    column.add_child(host_button)
+
+    host_ip_label = Label.new()
+    host_ip_label.text = "Your Wi-Fi IP will appear here"
+    host_ip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(host_ip_label)
+
+    address_input = LineEdit.new()
+    address_input.placeholder_text = "Enter your brother's IP"
+    address_input.virtual_keyboard_enabled = true
+    address_input.clear_button_enabled = true
+    column.add_child(address_input)
+
+    var join_button := Button.new()
+    join_button.text = "JOIN WORLD"
+    join_button.custom_minimum_size.y = 40
+    join_button.pressed.connect(_join_lan_game)
+    column.add_child(join_button)
+
+    var leave_button := Button.new()
+    leave_button.text = "LEAVE SESSION"
+    leave_button.pressed.connect(_disconnect_lan_game)
+    column.add_child(leave_button)
+
+    network_status_label = Label.new()
+    network_status_label.text = "Offline • Both phones must use the same Wi-Fi"
+    network_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(network_status_label)
+
+func _create_settings_panel(layer: CanvasLayer) -> void:
+    var screen_size := get_viewport().get_visible_rect().size
+    var panel := PanelContainer.new()
+    panel.name = "PerformancePanel"
+    panel.position = Vector2(screen_size.x - 330.0, 340.0)
+    panel.custom_minimum_size = Vector2(310.0, 0.0)
+    layer.add_child(panel)
+
+    var column := VBoxContainer.new()
+    column.add_theme_constant_override("separation", 4)
+    panel.add_child(column)
+
+    var title := Label.new()
+    title.text = "DEVICE PERFORMANCE"
+    title.add_theme_font_size_override("font_size", 15)
+    column.add_child(title)
+
+    var quality_row := HBoxContainer.new()
+    var quality_label := Label.new()
+    quality_label.text = "Quality"
+    quality_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    quality_row.add_child(quality_label)
+
+    quality_option = OptionButton.new()
+    quality_option.add_item("Auto", 0)
+    quality_option.add_item("Low", 1)
+    quality_option.add_item("Balanced", 2)
+    quality_option.add_item("High", 3)
+    quality_option.add_item("Ultra", 4)
+    quality_option.select(0)
+    quality_option.item_selected.connect(_on_quality_selected)
+    quality_row.add_child(quality_option)
+    column.add_child(quality_row)
+
+    var fps_row := HBoxContainer.new()
+    var fps_text := Label.new()
+    fps_text.text = "FPS limit"
+    fps_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    fps_row.add_child(fps_text)
+
+    fps_option = OptionButton.new()
+    for fps_value in [20, 30, 45, 60, 90, 120]:
+        fps_option.add_item("%d FPS" % fps_value, fps_value)
+    fps_option.select(3)
+    fps_option.item_selected.connect(_on_fps_selected)
+    fps_row.add_child(fps_option)
+    column.add_child(fps_row)
+
+    fps_label = Label.new()
+    fps_label.text = "Actual FPS depends on the device and scene load."
+    fps_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    column.add_child(fps_label)
 
 func _input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
