@@ -27,3 +27,47 @@ jobs:
 
       - name: Run main scene smoke test
         run: godot --headless --path . --quit-after 60
+
+      - name: Exercise LAN host and client processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST_LOG="$RUNNER_TEMP/worlds-lan-host.log"
+          CLIENT_LOG="$RUNNER_TEMP/worlds-lan-client.log"
+          godot --headless --path . -- --lan-smoke-host >"$HOST_LOG" 2>&1 &
+          HOST_PID=$!
+          cleanup() {
+            kill "$HOST_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 30); do
+            if grep -q "LAN_SMOKE_HOST_READY" "$HOST_LOG"; then
+              break
+            fi
+            if ! kill -0 "$HOST_PID" 2>/dev/null; then
+              cat "$HOST_LOG"
+              exit 1
+            fi
+            sleep 0.25
+          done
+          grep -q "LAN_SMOKE_HOST_READY" "$HOST_LOG"
+
+          godot --headless --path . -- --lan-smoke-client >"$CLIENT_LOG" 2>&1 &
+          CLIENT_PID=$!
+
+          if ! wait "$HOST_PID"; then
+            cat "$HOST_LOG"
+            cat "$CLIENT_LOG"
+            exit 1
+          fi
+          if ! wait "$CLIENT_PID"; then
+            cat "$HOST_LOG"
+            cat "$CLIENT_LOG"
+            exit 1
+          fi
+
+          cat "$HOST_LOG"
+          cat "$CLIENT_LOG"
+          grep -q "LAN_SMOKE_HOST_PASS" "$HOST_LOG"
+          grep -q "LAN_SMOKE_CLIENT_PASS" "$CLIENT_LOG"
