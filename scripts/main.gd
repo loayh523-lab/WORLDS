@@ -143,6 +143,8 @@ func _ready() -> void:
     print("WORLDS_STAGE wildlife")
     _create_village()
     print("WORLDS_STAGE village")
+    _create_riverfront_landmarks()
+    print("WORLDS_STAGE riverfront_landmarks")
     _create_campsite()
     print("WORLDS_STAGE campsite")
     _create_memory_stone()
@@ -1471,6 +1473,17 @@ func _nearest_interaction_for(position: Vector3) -> Dictionary:
             result["action"] = "memory"
             result["index"] = -1
 
+    for index in range(placed_buildings.size()):
+        var building: Dictionary = placed_buildings[index]
+        if str(building.get("type", "")) != "cabin":
+            continue
+        var cabin_position: Vector3 = building.get("position", Vector3.ZERO)
+        var cabin_distance := Vector2(position.x - cabin_position.x, position.z - cabin_position.z).length()
+        if cabin_distance < 4.8 and cabin_distance < best_distance:
+            best_distance = cabin_distance
+            result["action"] = "home"
+            result["index"] = index
+
     var camp_distance := Vector2(position.x - camp_position.x, position.z - camp_position.z).length()
     if camp_distance < 4.5 and camp_distance < best_distance:
         result["action"] = "sleep"
@@ -1505,10 +1518,10 @@ func _rpc_request_interaction() -> void:
             rpc_id(sender, "_rpc_apply_personal_interaction", "forage")
         "gather":
             _server_gather_resource(int(nearby["index"]), sender)
-        "sleep":
+        "sleep", "home":
             world_clock = 7.0
             rpc("_rpc_set_shared_clock", world_clock)
-            rpc_id(sender, "_rpc_apply_personal_interaction", "sleep")
+            rpc_id(sender, "_rpc_apply_personal_interaction", action)
         "memory":
             _apply_world_memory()
             rpc("_rpc_world_memory_activated")
@@ -1532,6 +1545,18 @@ func _rpc_apply_personal_interaction(action: String) -> void:
             thirst = maxf(0.0, thirst - 10.0)
             health = minf(100.0, health + 12.0)
             _show_status_note("You rested at the campsite.")
+        "home":
+            rest = 100.0
+            hunger = maxf(0.0, hunger - 4.0)
+            thirst = maxf(0.0, thirst - 5.0)
+            health = minf(100.0, health + 12.0)
+            _show_status_note("You slept safely in your cabin.")
+        "home":
+            rest = 100.0
+            hunger = maxf(0.0, hunger - 4.0)
+            thirst = maxf(0.0, thirst - 5.0)
+            health = minf(100.0, health + 12.0)
+            _show_status_note("You slept safely in your cabin.")
         _:
             _show_status_note("Nothing nearby to use.")
 
@@ -1655,6 +1680,8 @@ func _get_interaction_prompt() -> String:
             return "USE / E: Gather materials"
         "sleep":
             return "USE / E: Rest at the campsite"
+        "home":
+            return "USE / E: Rest inside your cabin"
         "memory":
             return "USE / E: Listen to the world's memory"
         _:
@@ -1710,6 +1737,20 @@ func _try_interact() -> void:
             thirst = maxf(0.0, thirst - 10.0)
             health = minf(100.0, health + 12.0)
             _show_status_note("You rested at the campsite until morning.")
+        "home":
+            world_clock = 7.0
+            rest = 100.0
+            hunger = maxf(0.0, hunger - 4.0)
+            thirst = maxf(0.0, thirst - 5.0)
+            health = minf(100.0, health + 12.0)
+            _show_status_note("You slept safely in your cabin. A new morning begins.")
+        "home":
+            world_clock = 7.0
+            rest = 100.0
+            hunger = maxf(0.0, hunger - 4.0)
+            thirst = maxf(0.0, thirst - 5.0)
+            health = minf(100.0, health + 12.0)
+            _show_status_note("You slept safely in your cabin. A new morning begins.")
         "memory":
             _awaken_world_memory()
         _:
@@ -1778,6 +1819,8 @@ func _get_build_recipe(build_type: String) -> Dictionary:
             return {"wood": 5, "stone": 2, "fiber": 0}
         "shelter":
             return {"wood": 12, "stone": 4, "fiber": 6}
+        "cabin":
+            return {"wood": 14, "stone": 6, "fiber": 6}
         _:
             return {}
 
@@ -1825,9 +1868,11 @@ func _server_place_building(build_type: String, actor_position: Vector3, actor_f
     if Vector2(placement.x, placement.z).distance_to(Vector2(camp_position.x, camp_position.z)) < 3.2:
         _show_status_note("Move a little farther from the starting campsite.")
         return
+    var new_clearance := _structure_clearance(build_type)
     for building in placed_buildings:
         var other: Vector3 = building["position"]
-        if Vector2(placement.x, placement.z).distance_to(Vector2(other.x, other.z)) < 3.4:
+        var existing_clearance := _structure_clearance(str(building.get("type", "")))
+        if Vector2(placement.x, placement.z).distance_to(Vector2(other.x, other.z)) < maxf(new_clearance, existing_clearance):
             _show_status_note("There is already a structure too close.")
             return
 
@@ -1842,6 +1887,9 @@ func _server_place_building(build_type: String, actor_position: Vector3, actor_f
         rpc("_rpc_set_shared_inventory", shared_inventory)
         rpc("_rpc_spawn_building", build_type, placement, facing)
     _save_game()
+
+func _structure_clearance(build_type: String) -> float:
+    return 9.0 if build_type == "cabin" else 3.4
 
 func _spawn_building_visual(build_type: String, position: Vector3, facing: float, record: bool) -> void:
     var root := Node3D.new()
@@ -1914,6 +1962,45 @@ func _spawn_building_visual(build_type: String, position: Vector3, facing: float
             roof.material_override = _build_material(Color(0.25, 0.18, 0.12))
             root.add_child(roof)
             _add_building_collision(root, Vector3(3.6, 0.2, 3.1), Vector3(0.0, 0.1, 0.0))
+        "cabin":
+            var cabin_wall := _build_material(Color(0.55, 0.39, 0.25))
+            var cabin_trim := _build_material(Color(0.25, 0.16, 0.10))
+            var cabin_roof := _build_material(Color(0.20, 0.17, 0.15))
+            var cabin_glass := _build_material(Color(0.24, 0.48, 0.54))
+            cabin_glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+            cabin_glass.albedo_color.a = 0.78
+            _village_box(root, "Cabin_Floor", Vector3(6.2, 0.16, 6.2), Vector3(0.0, 0.08, 0.0), cabin_trim)
+            _village_box(root, "Cabin_Back_Wall", Vector3(6.0, 4.0, 0.28), Vector3(0.0, 2.0, 2.88), cabin_wall)
+            _village_box(root, "Cabin_Left_Wall", Vector3(0.28, 4.0, 6.0), Vector3(-2.88, 2.0, 0.0), cabin_wall)
+            _village_box(root, "Cabin_Right_Wall", Vector3(0.28, 4.0, 6.0), Vector3(2.88, 2.0, 0.0), cabin_wall)
+            _village_box(root, "Cabin_Front_Left", Vector3(2.1, 4.0, 0.28), Vector3(-1.95, 2.0, -2.88), cabin_wall)
+            _village_box(root, "Cabin_Front_Right", Vector3(2.1, 4.0, 0.28), Vector3(1.95, 2.0, -2.88), cabin_wall)
+            _village_box(root, "Cabin_Door_Lintel", Vector3(1.8, 0.48, 0.28), Vector3(0.0, 3.76, -2.88), cabin_trim)
+            for side in [-1.0, 1.0]:
+                _village_box(root, "Cabin_Door_Frame", Vector3(0.18, 3.45, 0.22), Vector3(side * 0.96, 1.72, -3.03), cabin_trim)
+            var open_door := _village_box(root, "Cabin_Open_Door", Vector3(1.65, 3.15, 0.12), Vector3(-1.82, 1.58, -2.98), cabin_trim)
+            open_door.rotation.y = -0.42
+            for side in [-1.0, 1.0]:
+                var window_z := side * 1.42
+                _village_box(root, "Cabin_Window_Glass", Vector3(0.08, 1.22, 1.35), Vector3(-3.04, 2.45, window_z), cabin_glass)
+                _village_box(root, "Cabin_Window_Glass", Vector3(0.08, 1.22, 1.35), Vector3(3.04, 2.45, window_z), cabin_glass)
+                _village_box(root, "Cabin_Window_Trim", Vector3(0.16, 1.42, 1.55), Vector3(-3.08, 2.45, window_z), cabin_trim)
+                _village_box(root, "Cabin_Window_Trim", Vector3(0.16, 1.42, 1.55), Vector3(3.08, 2.45, window_z), cabin_trim)
+            var left_roof := _village_box(root, "Cabin_Roof_Left", Vector3(3.65, 0.24, 6.6), Vector3(-1.72, 4.22, 0.0), cabin_roof)
+            left_roof.rotation.z = 0.50
+            var right_roof := _village_box(root, "Cabin_Roof_Right", Vector3(3.65, 0.24, 6.6), Vector3(1.72, 4.22, 0.0), cabin_roof)
+            right_roof.rotation.z = -0.50
+            _village_box(root, "Cabin_Ridge_Beam", Vector3(0.22, 0.26, 6.72), Vector3(0.0, 5.13, 0.0), cabin_trim)
+            _village_box(root, "Cabin_Chimney", Vector3(0.72, 1.75, 0.72), Vector3(2.05, 5.0, 1.65), cabin_wall)
+            _village_box(root, "Cabin_Bed_Frame", Vector3(2.0, 0.34, 1.35), Vector3(1.45, 0.28, 1.05), cabin_trim)
+            _village_box(root, "Cabin_Bedroll", Vector3(1.82, 0.18, 1.18), Vector3(1.45, 0.53, 1.05), _build_material(Color(0.65, 0.48, 0.31)))
+            _village_box(root, "Cabin_Rug", Vector3(2.35, 0.05, 1.75), Vector3(-1.20, 0.19, -0.30), _build_material(Color(0.43, 0.23, 0.17)))
+            _add_building_collision(root, Vector3(6.0, 4.0, 0.28), Vector3(0.0, 2.0, 2.88))
+            _add_building_collision(root, Vector3(0.28, 4.0, 6.0), Vector3(-2.88, 2.0, 0.0))
+            _add_building_collision(root, Vector3(0.28, 4.0, 6.0), Vector3(2.88, 2.0, 0.0))
+            _add_building_collision(root, Vector3(2.1, 4.0, 0.28), Vector3(-1.95, 2.0, -2.88))
+            _add_building_collision(root, Vector3(2.1, 4.0, 0.28), Vector3(1.95, 2.0, -2.88))
+            _add_building_collision(root, Vector3(1.8, 0.48, 0.28), Vector3(0.0, 3.76, -2.88))
 
     if record:
         placed_buildings.append({
@@ -2116,6 +2203,20 @@ func _create_build_panel(layer: CanvasLayer) -> void:
     shelter_button.pressed.connect(_request_build.bind("shelter"))
     column.add_child(shelter_button)
     build_recipe_buttons["shelter"] = shelter_button
+
+    var cabin_button := Button.new()
+    cabin_button.text = "BUILD TIMBER CABIN  •  14 WOOD + 6 STONE + 6 FIBER"
+    cabin_button.custom_minimum_size.y = 48.0
+    cabin_button.pressed.connect(_request_build.bind("cabin"))
+    column.add_child(cabin_button)
+    build_recipe_buttons["cabin"] = cabin_button
+
+    var cabin_button := Button.new()
+    cabin_button.text = "BUILD A TIMBER CABIN  •  14 WOOD + 6 STONE + 6 FIBER"
+    cabin_button.custom_minimum_size.y = 48.0
+    cabin_button.pressed.connect(_request_build.bind("cabin"))
+    column.add_child(cabin_button)
+    build_recipe_buttons["cabin"] = cabin_button
 
     var close_button := Button.new()
     close_button.text = "CLOSE"
@@ -2647,6 +2748,123 @@ func _update_wildlife(delta: float) -> void:
         animal["timer"] = timer
         wildlife_agents[index] = animal
 
+
+func _create_riverfront_landmarks() -> void:
+    var crossing_z := 72.0
+    var river_x := sin(crossing_z * 0.018) * 18.0
+    var west_bank_x := river_x - 12.5
+    var east_bank_x := river_x + 12.5
+    var bank_height := maxf(_height_at(west_bank_x, crossing_z), _height_at(east_bank_x, crossing_z))
+    var deck_height := bank_height + 0.42
+    var timber := _build_material(Color(0.34, 0.23, 0.14))
+    var timber_light := _build_material(Color(0.53, 0.38, 0.23))
+    var stone := _build_material(Color(0.43, 0.46, 0.43))
+    var lantern_glow := _build_material(Color(1.0, 0.68, 0.30), true)
+
+    var bridge := Node3D.new()
+    bridge.name = "Riverlight_Crossing"
+    bridge.position = Vector3(river_x, deck_height, crossing_z)
+    add_child(bridge)
+    _village_box(bridge, "Bridge_Deck", Vector3(28.0, 0.42, 5.2), Vector3(0.0, -0.21, 0.0), timber)
+    for plank_index in range(18):
+        var plank_x := -13.4 + float(plank_index) * 1.58
+        _village_box(bridge, "Deck_Plank", Vector3(0.075, 0.045, 5.18), Vector3(plank_x, 0.025, 0.0), timber_light)
+    for side in [-1.0, 1.0]:
+        for post_index in range(10):
+            var post_x := -13.0 + float(post_index) * (26.0 / 9.0)
+            _village_box(bridge, "Bridge_Rail_Post", Vector3(0.24, 1.65, 0.24), Vector3(post_x, 0.82, side * 2.42), timber_light)
+        _village_box(bridge, "Bridge_Railing", Vector3(27.0, 0.22, 0.24), Vector3(0.0, 1.62, side * 2.42), timber)
+        _village_box(bridge, "Bridge_Lower_Rail", Vector3(27.0, 0.15, 0.18), Vector3(0.0, 0.62, side * 2.42), timber)
+    for pier_side in [-1.0, 1.0]:
+        _village_box(bridge, "Stone_Bridge_Pier", Vector3(1.15, 1.65, 1.1), Vector3(pier_side * 1.7, -1.0, 0.0), stone)
+    var bridge_body := StaticBody3D.new()
+    var bridge_collision := CollisionShape3D.new()
+    var bridge_shape := BoxShape3D.new()
+    bridge_shape.size = Vector3(28.0, 0.42, 5.2)
+    bridge_collision.shape = bridge_shape
+    bridge_collision.position.y = -0.21
+    bridge_body.add_child(bridge_collision)
+    bridge.add_child(bridge_body)
+
+    # A small stone approach guides walkers from the existing village to the crossing.
+    for step_index in range(23):
+        var progress := float(step_index) / 22.0
+        var path_x := lerpf(-82.0, west_bank_x - 1.2, progress)
+        var path_z := crossing_z + sin(progress * PI) * 3.2
+        var slab := _village_box(
+            self,
+            "River_Path_Stone",
+            Vector3(2.75, 0.14, 2.05),
+            Vector3(path_x, _height_at(path_x, path_z) + 0.08, path_z),
+            stone
+        )
+        slab.rotation.y = sin(progress * PI * 2.0) * 0.035
+
+    # An open timber pavilion gives the east bank a destination and a quiet resting place.
+    var pavilion_x := east_bank_x + 10.0
+    var pavilion_y := _height_at(pavilion_x, crossing_z)
+    var pavilion := Node3D.new()
+    pavilion.name = "River_Whisper_Pavilion"
+    pavilion.position = Vector3(pavilion_x, pavilion_y, crossing_z)
+    add_child(pavilion)
+    _village_box(pavilion, "Pavilion_Stone_Platform", Vector3(10.0, 0.34, 9.0), Vector3(0.0, 0.17, 0.0), stone)
+    for side_x in [-1.0, 1.0]:
+        for side_z in [-1.0, 1.0]:
+            _village_box(pavilion, "Pavilion_Timber_Post", Vector3(0.32, 3.9, 0.32), Vector3(side_x * 4.35, 2.12, side_z * 3.85), timber_light)
+            _village_box(pavilion, "Pavilion_Capital", Vector3(0.62, 0.22, 0.62), Vector3(side_x * 4.35, 4.12, side_z * 3.85), timber)
+    var pavilion_roof_left := _village_box(pavilion, "Pavilion_Roof_Left", Vector3(5.35, 0.30, 10.0), Vector3(-2.55, 4.22, 0.0), timber)
+    pavilion_roof_left.rotation.z = 0.16
+    var pavilion_roof_right := _village_box(pavilion, "Pavilion_Roof_Right", Vector3(5.35, 0.30, 10.0), Vector3(2.55, 4.22, 0.0), timber)
+    pavilion_roof_right.rotation.z = -0.16
+    _village_box(pavilion, "Pavilion_Ridge", Vector3(0.28, 0.32, 10.2), Vector3(0.0, 4.65, 0.0), timber_light)
+    for bench_z in [-2.65, 2.65]:
+        _village_box(pavilion, "Pavilion_Bench_Seat", Vector3(2.65, 0.28, 0.64), Vector3(0.0, 0.48, bench_z), timber_light)
+        _village_box(pavilion, "Pavilion_Bench_Back", Vector3(2.65, 0.78, 0.18), Vector3(0.0, 0.91, bench_z + 0.25), timber)
+    for lamp_x in [-4.05, 4.05]:
+        for lamp_z in [-3.55, 3.55]:
+            _village_box(pavilion, "Pavilion_Lantern", Vector3(0.42, 0.5, 0.42), Vector3(lamp_x, 3.25, lamp_z), lantern_glow)
+    var pavilion_body := StaticBody3D.new()
+    var pavilion_collision := CollisionShape3D.new()
+    var pavilion_shape := BoxShape3D.new()
+    pavilion_shape.size = Vector3(10.0, 0.34, 9.0)
+    pavilion_collision.shape = pavilion_shape
+    pavilion_collision.position.y = 0.17
+    pavilion_body.add_child(pavilion_collision)
+    pavilion.add_child(pavilion_body)
+
+    # Three compact willow silhouettes frame the pavilion without adding heavy particle effects.
+    for willow_index in range(3):
+        var angle := TAU * float(willow_index) / 3.0
+        var willow_x := pavilion_x + cos(angle) * 10.0
+        var willow_z := crossing_z + sin(angle) * 10.0
+        var willow := Node3D.new()
+        willow.name = "River_Willow_%02d" % willow_index
+        willow.position = Vector3(willow_x, _height_at(willow_x, willow_z), willow_z)
+        add_child(willow)
+        var trunk := MeshInstance3D.new()
+        var trunk_mesh := CylinderMesh.new()
+        trunk_mesh.top_radius = 0.18
+        trunk_mesh.bottom_radius = 0.34
+        trunk_mesh.height = 5.2
+        trunk.mesh = trunk_mesh
+        trunk.position.y = 2.6
+        trunk.material_override = timber
+        willow.add_child(trunk)
+        for canopy_index in range(4):
+            var canopy := MeshInstance3D.new()
+            var canopy_mesh := SphereMesh.new()
+            canopy_mesh.radius = 2.2
+            canopy_mesh.height = 2.5
+            canopy.mesh = canopy_mesh
+            canopy.position = Vector3(
+                cos(float(canopy_index) * TAU / 4.0) * 1.25,
+                4.65 - float(canopy_index % 2) * 0.45,
+                sin(float(canopy_index) * TAU / 4.0) * 1.25
+            )
+            canopy.scale = Vector3(1.0, 0.72, 1.0)
+            canopy.material_override = _build_material(Color(0.23, 0.40, 0.22).lerp(Color(0.38, 0.52, 0.28), float(canopy_index) * 0.12))
+            willow.add_child(canopy)
+
 func _create_campsite() -> void:
     camp_position = Vector3(18.0, _height_at(18.0, 0.0), 0.0)
 
@@ -3160,6 +3378,15 @@ func _start_gameplay_smoke_test() -> void:
         get_tree().quit(1)
         return
 
+    if _get_build_recipe("cabin") != {"wood": 14, "stone": 6, "fiber": 6}:
+        push_error("GAMEPLAY_SMOKE_FAIL: cabin recipe is missing or incorrect")
+        get_tree().quit(1)
+        return
+    if get_node_or_null("Riverlight_Crossing") == null or get_node_or_null("River_Whisper_Pavilion") == null:
+        push_error("GAMEPLAY_SMOKE_FAIL: riverfront landmarks were not created")
+        get_tree().quit(1)
+        return
+
     var inventory_before_invalid_place := shared_inventory.duplicate(true)
     var previous_build_count := placed_buildings.size()
     _server_place_building("campfire", Vector3(0.0, _height_at(0.0, -4.0) + 1.2, -4.0), 0.0)
@@ -3187,6 +3414,13 @@ func _start_gameplay_smoke_test() -> void:
         get_tree().quit(1)
         return
 
+    var cabin_position := Vector3(-132.0, _height_at(-132.0, 116.0), 116.0)
+    _spawn_building_visual("cabin", cabin_position, 0.0, true)
+    if get_node_or_null("Built_cabin_01") == null or str(placed_buildings.back().get("type", "")) != "cabin":
+        push_error("GAMEPLAY_SMOKE_FAIL: cabin visual or placement record failed")
+        get_tree().quit(1)
+        return
+
     _save_game()
     var saved := ConfigFile.new()
     if saved.load(SAVE_PATH) != OK:
@@ -3202,6 +3436,10 @@ func _start_gameplay_smoke_test() -> void:
         return
     if not (saved_buildings is Array) or saved_buildings.size() != placed_buildings.size():
         push_error("GAMEPLAY_SMOKE_FAIL: placed structures were not persisted")
+        get_tree().quit(1)
+        return
+    if not (saved_buildings[1] is Dictionary) or str(saved_buildings[1].get("type", "")) != "cabin":
+        push_error("GAMEPLAY_SMOKE_FAIL: cabin was not persisted")
         get_tree().quit(1)
         return
     if not (saved_resources is Array) or int(saved_resources[0]) != 1:
@@ -3391,7 +3629,7 @@ func _load_game() -> void:
             var build_type := str(building.get("type", ""))
             var build_position: Variant = building.get("position", Vector3.ZERO)
             var build_facing := float(building.get("rotation", 0.0))
-            if build_type in ["campfire", "storage", "shelter"] and typeof(build_position) == TYPE_VECTOR3:
+            if build_type in ["campfire", "storage", "shelter", "cabin"] and typeof(build_position) == TYPE_VECTOR3:
                 _spawn_building_visual(build_type, build_position, build_facing, true)
 
     if bool(config.get_value("world", "memory_awakened", false)):
