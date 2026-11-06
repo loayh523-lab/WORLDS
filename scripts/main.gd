@@ -12,6 +12,9 @@ const NETWORK_SEND_INTERVAL := 0.05
 const SAVE_PATH := "user://worlds_save.cfg"
 
 var player: CharacterBody3D
+var player_name := "Wanderer"
+var player_name_input: LineEdit
+var master_volume_slider: HSlider
 var camera_pivot: Node3D
 var camera: Camera3D
 var left_arm: MeshInstance3D
@@ -176,7 +179,7 @@ func _ready() -> void:
     _on_button_opacity_changed(button_opacity)
     _on_control_scale_changed(control_scale)
     _sync_settings_sliders()
-    _apply_quality_preset(0)
+    _apply_quality_preset(quality_index)
     Engine.max_fps = current_fps_target
     var command_args := OS.get_cmdline_user_args()
     if command_args.has("--gameplay-smoke"):
@@ -1267,6 +1270,24 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     title.add_theme_font_size_override("font_size", 17)
     column.add_child(title)
 
+    var player_name_row := HBoxContainer.new()
+    var player_name_caption := Label.new()
+    player_name_caption.text = "Player name"
+    player_name_row.add_child(player_name_caption)
+    player_name_input = LineEdit.new()
+    player_name_input.text = player_name
+    player_name_input.placeholder_text = "Choose your name"
+    player_name_input.max_length = 18
+    player_name_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    player_name_input.virtual_keyboard_enabled = true
+    player_name_row.add_child(player_name_input)
+    column.add_child(player_name_row)
+
+    var apply_name_button := Button.new()
+    apply_name_button.text = "APPLY PLAYER NAME"
+    apply_name_button.pressed.connect(_apply_player_name)
+    column.add_child(apply_name_button)
+
     var host_button := Button.new()
     host_button.text = "CREATE WORLD"
     host_button.custom_minimum_size.y = 40
@@ -1299,6 +1320,17 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     network_status_label.text = "Offline • Both phones must use the same Wi-Fi"
     network_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(network_status_label)
+
+func _apply_player_name() -> void:
+    if not player_name_input:
+        return
+    var clean_name := player_name_input.text.strip_edges()
+    if clean_name.is_empty():
+        clean_name = "Wanderer"
+    player_name = clean_name.substr(0, 18)
+    player_name_input.text = player_name
+    _show_status_note("Player name saved: " + player_name)
+    _save_game()
 
 func _create_settings_panel(layer: CanvasLayer) -> void:
     var screen_size := get_viewport().get_visible_rect().size
@@ -1418,6 +1450,17 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     button_opacity_slider.value_changed.connect(_on_button_opacity_changed)
     column.add_child(button_opacity_slider)
 
+    var audio_title := Label.new()
+    audio_title.text = "Master volume"
+    column.add_child(audio_title)
+    master_volume_slider = HSlider.new()
+    master_volume_slider.min_value = 0.0
+    master_volume_slider.max_value = 1.0
+    master_volume_slider.step = 0.05
+    master_volume_slider.value = 1.0
+    master_volume_slider.value_changed.connect(_on_master_volume_changed)
+    column.add_child(master_volume_slider)
+
     var layout_button := Button.new()
     layout_button.text = "EDIT TOUCH BUTTONS"
     layout_button.pressed.connect(_set_control_layout_edit.bind(true))
@@ -1437,6 +1480,15 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     layout_status_label.text = "Move buttons and save your layout."
     layout_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(layout_status_label)
+
+func _on_master_volume_changed(value: float) -> void:
+    var safe_volume := clampf(value, 0.0, 1.0)
+    AudioServer.set_bus_volume_db(0, linear_to_db(maxf(0.0001, safe_volume)))
+    if safe_volume <= 0.001:
+        AudioServer.set_bus_mute(0, true)
+    else:
+        AudioServer.set_bus_mute(0, false)
+    _save_game()
 
 func _on_camera_sensitivity_changed(value: float) -> void:
     camera_sensitivity = clampf(value, 0.003, 0.012)
@@ -1603,8 +1655,9 @@ func _process(delta: float) -> void:
         var prompt := _get_interaction_prompt()
         var note := status_note if status_note_time > 0.0 else prompt
         var objective := _get_journey_objective()
-        hud_label.text = "WORLDS  •  %s  |  HP %d%%\nFood %d%%   Water %d%%   Rest %d%%\n%s\n%s" % [
+        hud_label.text = "WORLDS  •  %s  |  %s  |  HP %d%%\nFood %d%%   Water %d%%   Rest %d%%\n%s\n%s" % [
             time_text,
+            player_name,
             roundi(health),
             roundi(hunger),
             roundi(thirst),
@@ -4271,6 +4324,7 @@ func _save_game() -> void:
     config.set_value("world", "journey_met_villager", journey_met_villager)
     config.set_value("world", "journey_visited_crossing", journey_visited_crossing)
     config.set_value("world", "journey_met_villager", journey_met_villager)
+    config.set_value("player", "name", player_name)
     config.set_value("player", "health", health)
     config.set_value("player", "hunger", hunger)
     config.set_value("player", "thirst", thirst)
@@ -4282,6 +4336,9 @@ func _save_game() -> void:
     config.set_value("controls", "camera_fov", camera_fov)
     config.set_value("controls", "button_opacity", button_opacity)
     config.set_value("controls", "button_scale", control_scale)
+    config.set_value("settings", "quality_index", quality_index)
+    config.set_value("settings", "fps_target", current_fps_target)
+    config.set_value("settings", "master_volume", master_volume_slider.value if master_volume_slider else 1.0)
     for action in action_buttons:
         var button: TouchScreenButton = action_buttons[action]
         config.set_value("controls", str(action), button.position)
@@ -4311,9 +4368,29 @@ func _load_game() -> void:
     if config.load(SAVE_PATH) != OK:
         return
 
+    player_name = str(config.get_value("player", "name", player_name)).strip_edges()
+    if player_name.is_empty():
+        player_name = "Wanderer"
+    if player_name_input:
+        player_name_input.text = player_name
+    quality_index = clampi(int(config.get_value("settings", "quality_index", quality_index)), 0, 4)
+    current_fps_target = clampi(int(config.get_value("settings", "fps_target", current_fps_target)), 20, 120)
+    var allowed_fps := [20, 30, 45, 60, 90, 120]
+    if not allowed_fps.has(current_fps_target):
+        current_fps_target = 60
+    Engine.max_fps = current_fps_target
+    var saved_volume := clampf(float(config.get_value("settings", "master_volume", 1.0)), 0.0, 1.0)
+    _on_master_volume_changed(saved_volume)
+    if master_volume_slider:
+        master_volume_slider.value = saved_volume
+    if quality_option:
+        quality_option.select(quality_index)
+    if fps_option:
+        for fps_index in range(fps_option.item_count):
+            if fps_option.get_item_id(fps_index) == current_fps_target:
+                fps_option.select(fps_index)
+                break
     world_clock = fposmod(float(config.get_value("world", "clock", world_clock)), 24.0)
-    journey_visited_crossing = bool(config.get_value("world", "journey_visited_crossing", journey_visited_crossing))
-    journey_met_villager = bool(config.get_value("world", "journey_met_villager", journey_met_villager))
     journey_visited_crossing = bool(config.get_value("world", "journey_visited_crossing", journey_visited_crossing))
     journey_met_villager = bool(config.get_value("world", "journey_met_villager", journey_met_villager))
     health = clampf(float(config.get_value("player", "health", health)), 0.0, 100.0)
