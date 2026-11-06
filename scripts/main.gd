@@ -4056,6 +4056,8 @@ func _save_game() -> void:
     config.set_value("world", "memory_awakened", memory_awakened)
     config.set_value("world", "journey_visited_crossing", journey_visited_crossing)
     config.set_value("world", "journey_met_villager", journey_met_villager)
+    config.set_value("world", "journey_visited_crossing", journey_visited_crossing)
+    config.set_value("world", "journey_met_villager", journey_met_villager)
     config.set_value("player", "health", health)
     config.set_value("player", "hunger", hunger)
     config.set_value("player", "thirst", thirst)
@@ -4097,6 +4099,8 @@ func _load_game() -> void:
         return
 
     world_clock = fposmod(float(config.get_value("world", "clock", world_clock)), 24.0)
+    journey_visited_crossing = bool(config.get_value("world", "journey_visited_crossing", journey_visited_crossing))
+    journey_met_villager = bool(config.get_value("world", "journey_met_villager", journey_met_villager))
     journey_visited_crossing = bool(config.get_value("world", "journey_visited_crossing", journey_visited_crossing))
     journey_met_villager = bool(config.get_value("world", "journey_met_villager", journey_met_villager))
     health = clampf(float(config.get_value("player", "health", health)), 0.0, 100.0)
