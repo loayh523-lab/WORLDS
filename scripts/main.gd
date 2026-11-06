@@ -107,7 +107,6 @@ var joystick_center := Vector2.ZERO
 var joystick_vector := Vector2.ZERO
 var joystick_touch_index := -1
 var camera_touch_index := -1
-var touch_action_indices: Dictionary = {}
 var camera_sensitivity := CAMERA_DRAG_SENSITIVITY
 var camera_distance := 7.0
 var camera_fov := 70.0
@@ -1445,6 +1444,12 @@ func _add_control_button(label_text: String, center: Vector2, action: String, is
     button.texture_normal = normal_touch_texture
     button.texture_pressed = pressed_touch_texture
     button.visibility_mode = TouchScreenButton.VISIBILITY_ALWAYS
+    # TouchScreenButton consumes its own touch events. Connect its signals
+    # directly so the visible control always drives its intended gameplay action.
+    button.pressed.connect(_on_control_pressed.bind(action))
+    button.released.connect(_on_control_released.bind(action))
+    button.pressed.connect(_set_touch_button_visual.bind(action, true))
+    button.released.connect(_set_touch_button_visual.bind(action, false))
     touch_button_layer.add_child(button)
     action_buttons[action] = button
 
@@ -1484,13 +1489,18 @@ func _set_touch_button_visual(action: String, is_pressed: bool) -> void:
     if not action_buttons.has(action):
         return
     var button: TouchScreenButton = action_buttons[action]
-    button.texture_normal = pressed_touch_texture if is_pressed else normal_touch_texture
+    button.modulate = Color(1.0, 0.88, 0.62, button_opacity) if is_pressed else Color(1.0, 1.0, 1.0, button_opacity)
 
 func _set_control_layout_edit(enabled: bool) -> void:
     control_layout_edit_mode = enabled
     layout_drag_action = ""
     layout_touch_index = -1
     pressed_actions.clear()
+    # Let the root receive touch events while dragging controls; normal mode
+    # returns input ownership to the dedicated multitouch button nodes.
+    for action in action_buttons:
+        var action_button: TouchScreenButton = action_buttons[action]
+        action_button.set_process_input(not enabled)
     if layout_status_label:
         layout_status_label.text = "اسحب الأزرار لتغيير أماكنها ثم اضغط تم." if enabled else "تم حفظ ترتيب الأزرار."
     if joystick_base:
@@ -2066,27 +2076,16 @@ func _input(event: InputEvent) -> void:
                 _update_virtual_joystick(event.position)
                 get_viewport().set_input_as_handled()
                 return
-
-            var pressed_action := _action_button_at(event.position)
-            if pressed_action != "":
-                touch_action_indices[event.index] = pressed_action
-                _set_touch_button_visual(pressed_action, true)
-                _on_control_pressed(pressed_action)
-                get_viewport().set_input_as_handled()
+            # Action buttons own their own press/release signals. Do not
+            # capture those same touches as camera gestures.
+            if _action_button_at(event.position) != "":
                 return
-
             var visible_size := get_viewport().get_visible_rect().size
             if camera_touch_index == -1 and event.position.x >= visible_size.x * 0.40 and event.position.y < visible_size.y - 185.0:
                 camera_touch_index = event.index
         else:
             if event.index == joystick_touch_index:
                 _reset_virtual_joystick()
-                get_viewport().set_input_as_handled()
-            elif touch_action_indices.has(event.index):
-                var released_action := str(touch_action_indices[event.index])
-                touch_action_indices.erase(event.index)
-                _on_control_released(released_action)
-                _set_touch_button_visual(released_action, false)
                 get_viewport().set_input_as_handled()
             elif event.index == camera_touch_index:
                 camera_touch_index = -1
@@ -2097,8 +2096,6 @@ func _input(event: InputEvent) -> void:
             get_viewport().set_input_as_handled()
         elif event.index == joystick_touch_index:
             _update_virtual_joystick(event.position)
-            get_viewport().set_input_as_handled()
-        elif touch_action_indices.has(event.index):
             get_viewport().set_input_as_handled()
         elif event.index == camera_touch_index:
             _rotate_camera(event.relative, event.position)
@@ -4667,22 +4664,15 @@ func _start_gameplay_smoke_test() -> void:
         get_tree().quit(1)
         return
 
-    var run_touch := InputEventScreenTouch.new()
-    run_touch.index = 42
-    run_touch.position = action_buttons["run"].position
-    run_touch.pressed = true
-    _input(run_touch)
-    if not _button_down("run") or not touch_action_indices.has(42):
-        push_error("GAMEPLAY_SMOKE_FAIL: run touch button did not activate through the routed input handler")
+    var run_button: TouchScreenButton = action_buttons["run"]
+    run_button.pressed.emit()
+    if not _button_down("run"):
+        push_error("GAMEPLAY_SMOKE_FAIL: run TouchScreenButton signal did not activate the gameplay action")
         get_tree().quit(1)
         return
-    var run_release := InputEventScreenTouch.new()
-    run_release.index = 42
-    run_release.position = run_touch.position
-    run_release.pressed = false
-    _input(run_release)
-    if _button_down("run") or touch_action_indices.has(42):
-        push_error("GAMEPLAY_SMOKE_FAIL: run touch button did not release cleanly")
+    run_button.released.emit()
+    if _button_down("run"):
+        push_error("GAMEPLAY_SMOKE_FAIL: run TouchScreenButton release signal did not clear the gameplay action")
         get_tree().quit(1)
         return
 
