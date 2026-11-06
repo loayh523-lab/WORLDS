@@ -479,6 +479,15 @@ func _add_control_button(label_text: String, center: Vector2, action: String, is
     caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
     mobile_controls.add_child(caption)
 
+func _on_control_pressed(action: String) -> void:
+    if action == "interact":
+        _try_interact()
+        return
+    pressed_actions[action] = true
+
+func _on_control_released(action: String) -> void:
+    pressed_actions.erase(action)
+
 func _create_network_panel(layer: CanvasLayer) -> void:
     var screen_size := get_viewport().get_visible_rect().size
     network_panel = PanelContainer.new()
