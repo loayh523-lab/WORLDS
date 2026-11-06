@@ -1209,6 +1209,17 @@ func _nearest_interaction_for(position: Vector3) -> Dictionary:
             result["action"] = "forage"
             result["index"] = index
 
+    for index in range(resource_nodes.size()):
+        var resource: Dictionary = resource_nodes[index]
+        if int(resource["amount"]) <= 0:
+            continue
+        var resource_position: Vector3 = resource["position"]
+        var resource_distance := Vector2(position.x - resource_position.x, position.z - resource_position.z).length()
+        if resource_distance < 3.7 and resource_distance < best_distance:
+            best_distance = resource_distance
+            result["action"] = "gather"
+            result["index"] = index
+
     if not memory_awakened:
         var memory_distance := Vector2(position.x - memory_position.x, position.z - memory_position.z).length()
         if memory_distance < 4.5 and memory_distance < best_distance:
@@ -1247,6 +1258,8 @@ func _rpc_request_interaction() -> void:
             berry_bushes[bush_index] = bush
             rpc("_rpc_set_berry_servings", bush_index, remaining)
             rpc_id(sender, "_rpc_apply_personal_interaction", "forage")
+        "gather":
+            _server_gather_resource(int(nearby["index"]), sender)
         "sleep":
             world_clock = 7.0
             rpc("_rpc_set_shared_clock", world_clock)
@@ -1273,6 +1286,50 @@ func _rpc_apply_personal_interaction(action: String) -> void:
             _show_status_note("You rested at the campsite.")
         _:
             _show_status_note("Nothing nearby to use.")
+
+func _set_resource_amount_local(index: int, amount: int) -> void:
+    if index < 0 or index >= resource_nodes.size():
+        return
+    var resource: Dictionary = resource_nodes[index]
+    var safe_amount := clampi(amount, 0, 10)
+    resource["amount"] = safe_amount
+    resource_nodes[index] = resource
+    var visual: Node3D = resource["visual"]
+    if is_instance_valid(visual):
+        visual.visible = safe_amount > 0
+
+func _server_gather_resource(index: int, requester_id: int) -> void:
+    if index < 0 or index >= resource_nodes.size():
+        return
+    var resource: Dictionary = resource_nodes[index]
+    var remaining := int(resource["amount"])
+    if remaining <= 0:
+        return
+    var kind: String = resource["kind"]
+    if not shared_inventory.has(kind):
+        return
+
+    remaining -= 1
+    _set_resource_amount_local(index, remaining)
+    shared_inventory[kind] = int(shared_inventory[kind]) + 1
+    _update_inventory_ui()
+    _show_status_note("Collected 1 %s. Shared supplies increased." % kind)
+
+    if lan_active and multiplayer.is_server():
+        rpc("_rpc_set_resource_amount", index, remaining)
+        rpc("_rpc_set_shared_inventory", shared_inventory)
+    _save_game()
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_resource_amount(index: int, amount: int) -> void:
+    _set_resource_amount_local(index, amount)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_set_shared_inventory(inventory: Dictionary) -> void:
+    for key in ["wood", "stone", "fiber"]:
+        shared_inventory[key] = maxi(0, int(inventory.get(key, 0)))
+    _update_inventory_ui()
+    _show_status_note("Shared supplies synchronized.")
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_set_berry_servings(index: int, servings: int) -> void:
@@ -1310,6 +1367,12 @@ func _get_interaction_prompt() -> String:
             return "USE / E: Drink from the river"
         "forage":
             return "USE / E: Gather wild berries"
+        "gather":
+            var nearby := _nearest_interaction_for(player.global_position)
+            var resource_index := int(nearby.get("index", -1))
+            if resource_index >= 0 and resource_index < resource_nodes.size():
+                return "USE / E: Collect %s" % str(resource_nodes[resource_index]["kind"])
+            return "USE / E: Gather materials"
         "sleep":
             return "USE / E: Rest at the campsite"
         "memory":
@@ -1322,45 +1385,8 @@ func _get_interaction_prompt() -> String:
 func _nearest_interaction() -> String:
     if not player:
         return ""
-
-    var best_distance := INF
-    var best_action := ""
-
-    var river_center := sin(player.position.z * 0.018) * 18.0
-    var river_distance: float = absf(player.position.x - river_center)
-    if river_distance < 5.5 and abs(player.position.z) < WORLD_SIZE * 0.5:
-        best_distance = river_distance
-        best_action = "drink"
-
-    for bush in berry_bushes:
-        if int(bush["servings"]) <= 0:
-            continue
-        var bush_position: Vector3 = bush["position"]
-        var distance := Vector2(
-            player.position.x - bush_position.x,
-            player.position.z - bush_position.z
-        ).length()
-        if distance < 3.8 and distance < best_distance:
-            best_distance = distance
-            best_action = "forage"
-
-    if not memory_awakened:
-        var memory_distance := Vector2(
-            player.position.x - memory_position.x,
-            player.position.z - memory_position.z
-        ).length()
-        if memory_distance < 4.5 and memory_distance < best_distance:
-            best_distance = memory_distance
-            best_action = "memory"
-
-    var camp_distance := Vector2(
-        player.position.x - camp_position.x,
-        player.position.z - camp_position.z
-    ).length()
-    if camp_distance < 4.5 and camp_distance < best_distance:
-        best_action = "sleep"
-
-    return best_action
+    var nearby := _nearest_interaction_for(player.global_position)
+    return str(nearby.get("action", ""))
 
 func _try_interact() -> void:
     if lan_active and not multiplayer.is_server():
@@ -1371,6 +1397,9 @@ func _try_interact() -> void:
         "drink":
             thirst = min(100.0, thirst + 42.0)
             _show_status_note("You drank fresh water.")
+        "gather":
+            var nearest_resource := _nearest_interaction_for(player.global_position)
+            _server_gather_resource(int(nearest_resource.get("index", -1)), 1)
         "forage":
             var nearest_index := -1
             var nearest_distance := INF
@@ -1457,6 +1486,181 @@ func _create_foraging_bushes() -> void:
             berry_material.roughness = 0.7
             berry.material_override = berry_material
             add_child(berry)
+
+func _get_build_recipe(build_type: String) -> Dictionary:
+    match build_type:
+        "campfire":
+            return {"wood": 3, "stone": 2, "fiber": 0}
+        "storage":
+            return {"wood": 5, "stone": 2, "fiber": 0}
+        "shelter":
+            return {"wood": 12, "stone": 4, "fiber": 6}
+        _:
+            return {}
+
+func _request_build(build_type: String) -> void:
+    if not player:
+        return
+    if lan_active and not multiplayer.is_server():
+        rpc_id(1, "_rpc_request_place_building", build_type)
+        _show_status_note("Requesting a place from the host...")
+        return
+    _server_place_building(build_type, player.global_position, player.rotation.y)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_request_place_building(build_type: String) -> void:
+    if not multiplayer.is_server():
+        return
+    var sender := multiplayer.get_remote_sender_id()
+    if not network_remote_players.has(sender):
+        return
+    var avatar: Node3D = network_remote_players[sender]
+    if not is_instance_valid(avatar):
+        return
+    _server_place_building(build_type, avatar.global_position, avatar.rotation.y)
+
+func _server_place_building(build_type: String, actor_position: Vector3, actor_facing: float) -> void:
+    var recipe := _get_build_recipe(build_type)
+    if recipe.is_empty():
+        _show_status_note("Unknown building plan.")
+        return
+
+    for key in recipe:
+        if int(shared_inventory.get(key, 0)) < int(recipe[key]):
+            _show_status_note("Not enough materials for this structure.")
+            return
+
+    var forward := Vector3(sin(actor_facing), 0.0, -cos(actor_facing))
+    var placement := actor_position + forward * 4.0
+    placement.x = clampf(placement.x, -WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+    placement.z = clampf(placement.z, -WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+    var river_center := sin(placement.z * 0.018) * 18.0
+    if absf(placement.x - river_center) < 9.0:
+        _show_status_note("Choose a dry place away from the river.")
+        return
+    if Vector2(placement.x, placement.z).distance_to(Vector2(camp_position.x, camp_position.z)) < 3.2:
+        _show_status_note("Move a little farther from the starting campsite.")
+        return
+    for building in placed_buildings:
+        var other: Vector3 = building["position"]
+        if Vector2(placement.x, placement.z).distance_to(Vector2(other.x, other.z)) < 3.4:
+            _show_status_note("There is already a structure too close.")
+            return
+
+    placement.y = _height_at(placement.x, placement.z)
+    for key in recipe:
+        shared_inventory[key] = int(shared_inventory.get(key, 0)) - int(recipe[key])
+
+    _spawn_building_visual(build_type, placement, actor_facing, true)
+    _update_inventory_ui()
+    _show_status_note("Structure placed. The shared world has changed.")
+    if lan_active and multiplayer.is_server():
+        rpc("_rpc_set_shared_inventory", shared_inventory)
+        rpc("_rpc_spawn_building", build_type, placement, actor_facing)
+    _save_game()
+
+func _spawn_building_visual(build_type: String, position: Vector3, facing: float, record: bool) -> void:
+    var root := Node3D.new()
+    root.name = "Built_%s_%02d" % [build_type, placed_buildings.size()]
+    root.position = position
+    root.rotation.y = facing
+    add_child(root)
+
+    match build_type:
+        "campfire":
+            for i in range(3):
+                var log := MeshInstance3D.new()
+                var log_mesh := CylinderMesh.new()
+                log_mesh.top_radius = 0.13
+                log_mesh.bottom_radius = 0.13
+                log_mesh.height = 1.2
+                log.mesh = log_mesh
+                log.position = Vector3(cos(float(i) * TAU / 3.0) * 0.22, 0.14, sin(float(i) * TAU / 3.0) * 0.22)
+                log.rotation.z = PI * 0.5
+                log.material_override = _build_material(Color(0.30, 0.18, 0.10))
+                root.add_child(log)
+            var flame := MeshInstance3D.new()
+            var flame_mesh := SphereMesh.new()
+            flame_mesh.radius = 0.30
+            flame_mesh.height = 0.70
+            flame.mesh = flame_mesh
+            flame.position.y = 0.42
+            flame.material_override = _build_material(Color(1.0, 0.22, 0.035), true)
+            root.add_child(flame)
+            var light := OmniLight3D.new()
+            light.position.y = 0.85
+            light.light_color = Color(1.0, 0.38, 0.12)
+            light.light_energy = 0.7
+            light.omni_range = 6.0
+            root.add_child(light)
+        "storage":
+            var box := MeshInstance3D.new()
+            var box_mesh := BoxMesh.new()
+            box_mesh.size = Vector3(1.35, 0.92, 1.05)
+            box.mesh = box_mesh
+            box.position.y = 0.48
+            box.material_override = _build_material(Color(0.38, 0.23, 0.12))
+            root.add_child(box)
+            var lid := MeshInstance3D.new()
+            var lid_mesh := BoxMesh.new()
+            lid_mesh.size = Vector3(1.42, 0.16, 1.12)
+            lid.mesh = lid_mesh
+            lid.position.y = 1.02
+            lid.material_override = _build_material(Color(0.25, 0.15, 0.09))
+            root.add_child(lid)
+            _add_building_collision(root, Vector3(1.4, 1.0, 1.1), Vector3(0.0, 0.5, 0.0))
+        "shelter":
+            var wood_material := _build_material(Color(0.34, 0.22, 0.13))
+            for x in [-1.7, 1.7]:
+                for z in [-1.45, 1.45]:
+                    var post := MeshInstance3D.new()
+                    var post_mesh := CylinderMesh.new()
+                    post_mesh.top_radius = 0.13
+                    post_mesh.bottom_radius = 0.17
+                    post_mesh.height = 2.6
+                    post.mesh = post_mesh
+                    post.position = Vector3(x, 1.3, z)
+                    post.material_override = wood_material
+                    root.add_child(post)
+            var roof := MeshInstance3D.new()
+            var roof_mesh := BoxMesh.new()
+            roof_mesh.size = Vector3(4.0, 0.22, 3.7)
+            roof.mesh = roof_mesh
+            roof.position.y = 2.68
+            roof.material_override = _build_material(Color(0.25, 0.18, 0.12))
+            root.add_child(roof)
+            _add_building_collision(root, Vector3(3.6, 0.2, 3.1), Vector3(0.0, 0.1, 0.0))
+
+    if record:
+        placed_buildings.append({
+            "type": build_type,
+            "position": position,
+            "rotation": facing
+        })
+
+func _build_material(color: Color, emissive := false) -> StandardMaterial3D:
+    var material := StandardMaterial3D.new()
+    material.albedo_color = color
+    material.roughness = 0.92
+    if emissive:
+        material.emission_enabled = true
+        material.emission = color
+        material.emission_energy_multiplier = 1.4
+    return material
+
+func _add_building_collision(root: Node3D, size: Vector3, offset: Vector3) -> void:
+    var body := StaticBody3D.new()
+    body.position = offset
+    var collision := CollisionShape3D.new()
+    var shape := BoxShape3D.new()
+    shape.size = size
+    collision.shape = shape
+    body.add_child(collision)
+    root.add_child(body)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_spawn_building(build_type: String, position: Vector3, facing: float) -> void:
+    _spawn_building_visual(build_type, position, facing, true)
 
 func _create_resource_nodes() -> void:
     var resource_layout := [
