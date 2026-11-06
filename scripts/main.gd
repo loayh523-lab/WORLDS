@@ -1387,9 +1387,15 @@ func _input(event: InputEvent) -> void:
 func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
     if not camera or not camera_pivot:
         return
-    if network_panel and network_panel.get_global_rect().has_point(pointer_position):
+    if network_panel and network_panel.visible and network_panel.get_global_rect().has_point(pointer_position):
         return
-    if settings_panel and settings_panel.get_global_rect().has_point(pointer_position):
+    if settings_panel and settings_panel.visible and settings_panel.get_global_rect().has_point(pointer_position):
+        return
+    if minimap_panel and minimap_panel.visible and minimap_panel.get_global_rect().has_point(pointer_position):
+        return
+    if minimap_toggle_button and minimap_toggle_button.visible and minimap_toggle_button.get_global_rect().has_point(pointer_position):
+        return
+    if build_panel and build_panel.visible and build_panel.get_global_rect().has_point(pointer_position):
         return
 
     var screen_size := get_viewport().get_visible_rect().size
@@ -3207,6 +3213,20 @@ func _physics_process(delta: float) -> void:
         player.velocity.y = 0.0
 
     player.move_and_slide()
+    var safe_limit := WORLD_SIZE * 0.48
+    var safe_position := player.global_position
+    var clamped_x := clampf(safe_position.x, -safe_limit, safe_limit)
+    var clamped_z := clampf(safe_position.z, -safe_limit, safe_limit)
+    if not is_equal_approx(clamped_x, safe_position.x) or not is_equal_approx(clamped_z, safe_position.z):
+        safe_position.x = clamped_x
+        safe_position.z = clamped_z
+        player.global_position = safe_position
+        player.velocity.x = 0.0
+        player.velocity.z = 0.0
+    if player.global_position.y < -18.0:
+        player.global_position = camp_position + Vector3(0.0, 1.3, 0.0)
+        player.velocity = Vector3.ZERO
+        _show_status_note("You returned safely to your campsite.")
     if direction.length_squared() > 0.01:
         var target_angle := atan2(-direction.x, -direction.z)
         player.rotation.y = lerp_angle(player.rotation.y, target_angle, delta * 10.0)
