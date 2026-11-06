@@ -44,6 +44,8 @@ var thirst := 100.0
 var rest := 100.0
 var berry_bushes: Array[Dictionary] = []
 var resource_nodes: Array[Dictionary] = []
+var wildlife_agents: Array[Dictionary] = []
+var wildlife_rng := RandomNumberGenerator.new()
 var shared_inventory: Dictionary = {"wood": 0, "stone": 0, "fiber": 0}
 var placed_buildings: Array[Dictionary] = []
 var inventory_label: Label
@@ -128,6 +130,8 @@ func _ready() -> void:
     print("WORLDS_STAGE forage")
     _create_resource_nodes()
     print("WORLDS_STAGE resources")
+    _create_wildlife()
+    print("WORLDS_STAGE wildlife")
     _create_campsite()
     print("WORLDS_STAGE campsite")
     _create_memory_stone()
@@ -1288,6 +1292,7 @@ func _process(delta: float) -> void:
     _update_survival(delta)
     _update_network(delta)
     _update_remote_players(delta)
+    _update_wildlife(delta)
     _update_adaptive_quality(delta)
     metrics_refresh_timer += delta
     if minimap_marker and player:
@@ -1988,6 +1993,177 @@ func _update_inventory_ui() -> void:
             int(shared_inventory.get("fiber", 0))
         ]
 
+func _create_wildlife() -> void:
+    wildlife_rng.seed = 20261110
+    for index in range(10):
+        var x := wildlife_rng.randf_range(-115.0, 115.0)
+        var z := wildlife_rng.randf_range(-135.0, 135.0)
+        if absf(x - sin(z * 0.018) * 18.0) < 15.0:
+            x += 24.0
+        var root := Node3D.new()
+        root.name = "WildDeer_%02d" % index
+        root.position = Vector3(x, _height_at(x, z), z)
+        add_child(root)
+
+        var coat := StandardMaterial3D.new()
+        coat.albedo_color = Color(0.34, 0.20, 0.12).lerp(Color(0.50, 0.32, 0.18), wildlife_rng.randf() * 0.55)
+        coat.roughness = 0.98
+        var dark_coat := StandardMaterial3D.new()
+        dark_coat.albedo_color = Color(0.22, 0.13, 0.08)
+        dark_coat.roughness = 1.0
+        var muzzle_material := StandardMaterial3D.new()
+        muzzle_material.albedo_color = Color(0.72, 0.57, 0.42)
+        muzzle_material.roughness = 0.95
+        var antler_material := StandardMaterial3D.new()
+        antler_material.albedo_color = Color(0.68, 0.57, 0.39)
+        antler_material.roughness = 0.94
+
+        var body := MeshInstance3D.new()
+        var body_mesh := CapsuleMesh.new()
+        body_mesh.radius = 0.39
+        body_mesh.height = 1.45
+        body.mesh = body_mesh
+        body.position = Vector3(0.0, 1.12, 0.0)
+        body.rotation.x = PI * 0.5
+        body.material_override = coat
+        root.add_child(body)
+
+        var neck := MeshInstance3D.new()
+        var neck_mesh := CapsuleMesh.new()
+        neck_mesh.radius = 0.17
+        neck_mesh.height = 0.67
+        neck.mesh = neck_mesh
+        neck.position = Vector3(0.0, 1.55, -0.40)
+        neck.rotation.x = -0.38
+        neck.material_override = coat
+        root.add_child(neck)
+
+        var head := MeshInstance3D.new()
+        var head_mesh := SphereMesh.new()
+        head_mesh.radius = 0.23
+        head_mesh.height = 0.42
+        head.mesh = head_mesh
+        head.position = Vector3(0.0, 1.91, -0.66)
+        head.material_override = coat
+        root.add_child(head)
+
+        var muzzle := MeshInstance3D.new()
+        var muzzle_mesh := SphereMesh.new()
+        muzzle_mesh.radius = 0.12
+        muzzle_mesh.height = 0.18
+        muzzle.mesh = muzzle_mesh
+        muzzle.position = Vector3(0.0, 1.80, -0.86)
+        muzzle.material_override = muzzle_material
+        root.add_child(muzzle)
+
+        for side in [-1.0, 1.0]:
+            var ear := MeshInstance3D.new()
+            var ear_mesh := CapsuleMesh.new()
+            ear_mesh.radius = 0.055
+            ear_mesh.height = 0.34
+            ear.mesh = ear_mesh
+            ear.position = Vector3(side * 0.19, 2.08, -0.57)
+            ear.rotation.z = side * 0.48
+            ear.material_override = dark_coat
+            root.add_child(ear)
+
+            var antler_stem := MeshInstance3D.new()
+            var stem_mesh := CylinderMesh.new()
+            stem_mesh.top_radius = 0.012
+            stem_mesh.bottom_radius = 0.035
+            stem_mesh.height = 0.48
+            antler_stem.mesh = stem_mesh
+            antler_stem.position = Vector3(side * 0.13, 2.18, -0.55)
+            antler_stem.rotation.z = -side * 0.18
+            antler_stem.material_override = antler_material
+            root.add_child(antler_stem)
+
+            var antler_branch := MeshInstance3D.new()
+            var branch_mesh := CylinderMesh.new()
+            branch_mesh.top_radius = 0.008
+            branch_mesh.bottom_radius = 0.022
+            branch_mesh.height = 0.28
+            antler_branch.mesh = branch_mesh
+            antler_branch.position = Vector3(side * 0.22, 2.35, -0.55)
+            antler_branch.rotation.z = -side * 0.95
+            antler_branch.material_override = antler_material
+            root.add_child(antler_branch)
+
+        for leg_x in [-0.23, 0.23]:
+            for leg_z in [-0.43, 0.39]:
+                var leg := MeshInstance3D.new()
+                var leg_mesh := CylinderMesh.new()
+                leg_mesh.top_radius = 0.055
+                leg_mesh.bottom_radius = 0.075
+                leg_mesh.height = 0.72
+                leg.mesh = leg_mesh
+                leg.position = Vector3(leg_x, 0.43, leg_z)
+                leg.material_override = dark_coat
+                root.add_child(leg)
+
+        var tail := MeshInstance3D.new()
+        var tail_mesh := SphereMesh.new()
+        tail_mesh.radius = 0.13
+        tail_mesh.height = 0.23
+        tail.mesh = tail_mesh
+        tail.position = Vector3(0.0, 1.24, 0.55)
+        tail.material_override = muzzle_material
+        root.add_child(tail)
+
+        wildlife_agents.append({
+            "root": root,
+            "target": Vector3(x, _height_at(x, z), z),
+            "timer": wildlife_rng.randf_range(1.0, 4.0),
+            "speed": wildlife_rng.randf_range(0.9, 1.35)
+        })
+
+func _update_wildlife(delta: float) -> void:
+    if wildlife_agents.is_empty():
+        return
+    for index in range(wildlife_agents.size()):
+        var animal: Dictionary = wildlife_agents[index]
+        var root: Node3D = animal["root"]
+        if not is_instance_valid(root):
+            continue
+
+        var timer := float(animal["timer"]) - delta
+        var target: Vector3 = animal["target"]
+        var away := Vector3.ZERO
+        var fleeing := false
+        if player:
+            var from_player := root.global_position - player.global_position
+            from_player.y = 0.0
+            if from_player.length() < 11.0 and from_player.length() > 0.1:
+                fleeing = true
+                away = from_player.normalized()
+
+        if fleeing:
+            target = root.global_position + away * wildlife_rng.randf_range(16.0, 24.0)
+            target.x = clampf(target.x, -WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
+            target.z = clampf(target.z, -WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
+            timer = wildlife_rng.randf_range(2.0, 3.5)
+        elif timer <= 0.0 or Vector2(root.position.x - target.x, root.position.z - target.z).length() < 1.2:
+            var angle := wildlife_rng.randf_range(0.0, TAU)
+            var distance := wildlife_rng.randf_range(7.0, 18.0)
+            target = root.position + Vector3(cos(angle) * distance, 0.0, sin(angle) * distance)
+            target.x = clampf(target.x, -WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
+            target.z = clampf(target.z, -WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
+            timer = wildlife_rng.randf_range(3.0, 7.0)
+
+        var direction := Vector3(target.x - root.position.x, 0.0, target.z - root.position.z)
+        var animal_speed := 3.8 if fleeing else float(animal["speed"])
+        if direction.length() > 0.1:
+            var movement := direction.normalized() * animal_speed * delta
+            root.position.x += movement.x
+            root.position.z += movement.z
+            var target_angle := atan2(-direction.x, -direction.z)
+            root.rotation.y = lerp_angle(root.rotation.y, target_angle, minf(1.0, delta * 4.0))
+        var ground_height := _height_at(root.position.x, root.position.z)
+        root.position.y = lerpf(root.position.y, ground_height, minf(1.0, delta * 8.0))
+        animal["target"] = target
+        animal["timer"] = timer
+        wildlife_agents[index] = animal
+
 func _create_campsite() -> void:
     camp_position = Vector3(18.0, _height_at(18.0, 0.0), 0.0)
 
@@ -2451,7 +2627,7 @@ func _rpc_apply_remote_player_state(peer_id: int, world_position: Vector3, facin
 
 
 func _start_gameplay_smoke_test() -> void:
-    if resource_nodes.size() < 11 or build_panel == null or minimap_panel == null or minimap_marker == null:
+    if resource_nodes.size() < 11 or wildlife_agents.size() < 8 or build_panel == null or minimap_panel == null or minimap_marker == null:
         push_error("GAMEPLAY_SMOKE_FAIL: resources or crafting interface missing")
         get_tree().quit(1)
         return
