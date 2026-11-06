@@ -136,6 +136,104 @@ var camera_fov_slider: HSlider
 var control_scale_slider: HSlider
 var button_opacity_slider: HSlider
 var metrics_refresh_timer := 0.0
+var game_ui_theme: Theme
+
+func _create_game_ui_theme() -> Theme:
+    var theme := Theme.new()
+
+    var panel_style := StyleBoxFlat.new()
+    panel_style.bg_color = Color(0.018, 0.052, 0.045, 0.97)
+    panel_style.border_color = Color(0.46, 0.36, 0.19, 0.88)
+    panel_style.set_border_width_all(1)
+    panel_style.set_corner_radius_all(15)
+    panel_style.content_margin_left = 16.0
+    panel_style.content_margin_right = 16.0
+    panel_style.content_margin_top = 13.0
+    panel_style.content_margin_bottom = 13.0
+    panel_style.shadow_color = Color(0.0, 0.0, 0.0, 0.30)
+    panel_style.shadow_size = 10
+    panel_style.shadow_offset = Vector2(0.0, 3.0)
+    theme.set_stylebox("panel", "PanelContainer", panel_style)
+
+    var button_normal := StyleBoxFlat.new()
+    button_normal.bg_color = Color(0.055, 0.13, 0.105, 0.98)
+    button_normal.border_color = Color(0.39, 0.34, 0.21, 0.82)
+    button_normal.set_border_width_all(1)
+    button_normal.set_corner_radius_all(10)
+    button_normal.content_margin_left = 13.0
+    button_normal.content_margin_right = 13.0
+    button_normal.content_margin_top = 8.0
+    button_normal.content_margin_bottom = 8.0
+
+    var button_hover := StyleBoxFlat.new()
+    button_hover.bg_color = Color(0.085, 0.19, 0.145, 1.0)
+    button_hover.border_color = Color(0.76, 0.62, 0.32, 0.95)
+    button_hover.set_border_width_all(1)
+    button_hover.set_corner_radius_all(10)
+    button_hover.content_margin_left = 13.0
+    button_hover.content_margin_right = 13.0
+    button_hover.content_margin_top = 8.0
+    button_hover.content_margin_bottom = 8.0
+
+    var button_pressed := StyleBoxFlat.new()
+    button_pressed.bg_color = Color(0.11, 0.24, 0.17, 1.0)
+    button_pressed.border_color = Color(0.83, 0.68, 0.36, 1.0)
+    button_pressed.set_border_width_all(1)
+    button_pressed.set_corner_radius_all(10)
+    button_pressed.content_margin_left = 13.0
+    button_pressed.content_margin_right = 13.0
+    button_pressed.content_margin_top = 8.0
+    button_pressed.content_margin_bottom = 8.0
+
+    var button_disabled := StyleBoxFlat.new()
+    button_disabled.bg_color = Color(0.045, 0.075, 0.065, 0.82)
+    button_disabled.border_color = Color(0.20, 0.25, 0.21, 0.50)
+    button_disabled.set_border_width_all(1)
+    button_disabled.set_corner_radius_all(10)
+
+    for control_type in ["Button", "OptionButton"]:
+        theme.set_stylebox("normal", control_type, button_normal)
+        theme.set_stylebox("hover", control_type, button_hover)
+        theme.set_stylebox("pressed", control_type, button_pressed)
+        theme.set_stylebox("disabled", control_type, button_disabled)
+
+    var input_normal := StyleBoxFlat.new()
+    input_normal.bg_color = Color(0.012, 0.035, 0.031, 1.0)
+    input_normal.border_color = Color(0.32, 0.39, 0.31, 0.82)
+    input_normal.set_border_width_all(1)
+    input_normal.set_corner_radius_all(8)
+    input_normal.content_margin_left = 10.0
+    input_normal.content_margin_right = 10.0
+    input_normal.content_margin_top = 7.0
+    input_normal.content_margin_bottom = 7.0
+    var input_focus := input_normal.duplicate() as StyleBoxFlat
+    input_focus.border_color = Color(0.78, 0.63, 0.32, 1.0)
+    theme.set_stylebox("normal", "LineEdit", input_normal)
+    theme.set_stylebox("focus", "LineEdit", input_focus)
+
+    var progress_background := StyleBoxFlat.new()
+    progress_background.bg_color = Color(0.025, 0.065, 0.055, 1.0)
+    progress_background.set_corner_radius_all(5)
+    var progress_fill := StyleBoxFlat.new()
+    progress_fill.bg_color = Color(0.49, 0.62, 0.33, 1.0)
+    progress_fill.set_corner_radius_all(5)
+    theme.set_stylebox("background", "ProgressBar", progress_background)
+    theme.set_stylebox("fill", "ProgressBar", progress_fill)
+
+    theme.set_color("font_color", "Label", Color(0.88, 0.92, 0.84))
+    theme.set_color("font_color", "Button", Color(0.92, 0.93, 0.84))
+    theme.set_color("font_hover_color", "Button", Color(1.0, 0.94, 0.73))
+    theme.set_color("font_pressed_color", "Button", Color(1.0, 0.96, 0.81))
+    theme.set_color("font_disabled_color", "Button", Color(0.49, 0.55, 0.49))
+    theme.set_color("font_color", "LineEdit", Color(0.93, 0.95, 0.88))
+    theme.set_color("font_placeholder_color", "LineEdit", Color(0.47, 0.55, 0.49))
+    theme.set_color("caret_color", "LineEdit", Color(0.86, 0.72, 0.42))
+    theme.set_color("font_color", "OptionButton", Color(0.92, 0.93, 0.84))
+    theme.set_font_size("font_size", "Label", 13)
+    theme.set_font_size("font_size", "Button", 14)
+    theme.set_font_size("font_size", "OptionButton", 13)
+    theme.set_font_size("font_size", "LineEdit", 13)
+    return theme
 
 func _ready() -> void:
     multiplayer.peer_connected.connect(_on_peer_connected)
@@ -1047,11 +1145,13 @@ func _make_capsule_part(radius: float, height: float, color: Color) -> MeshInsta
     return part
 
 func _create_hud() -> void:
+    game_ui_theme = _create_game_ui_theme()
     var layer := CanvasLayer.new()
     layer.name = "HUD"
     add_child(layer)
 
     var panel := PanelContainer.new()
+    panel.theme = game_ui_theme
     panel.position = Vector2(14, 14)
     panel.custom_minimum_size = Vector2(252, 96)
     layer.add_child(panel)
@@ -1110,7 +1210,7 @@ func _create_hud() -> void:
 
     var menu_button := Button.new()
     menu_button.name = "OpenMainMenu"
-    menu_button.text = "MENU"
+    menu_button.text = "القائمة"
     menu_button.position = Vector2(maxf(16.0, screen_size.x - 112.0), 16.0)
     menu_button.custom_minimum_size = Vector2(96.0, 42.0)
     menu_button.pressed.connect(_return_to_main_menu)
@@ -1141,6 +1241,7 @@ func _create_main_menu() -> void:
     main_menu_layer.add_child(center)
 
     main_menu_panel = PanelContainer.new()
+    main_menu_panel.theme = game_ui_theme
     var menu_screen_size := get_viewport().get_visible_rect().size
     main_menu_panel.custom_minimum_size = Vector2(minf(390.0, maxf(280.0, menu_screen_size.x - 32.0)), 0.0)
     center.add_child(main_menu_panel)
@@ -1158,7 +1259,7 @@ func _create_main_menu() -> void:
     column.add_child(logo)
 
     var tagline := Label.new()
-    tagline.text = "A WORLD TO DISCOVER"
+    tagline.text = "عالم مفتوح ينتظر اكتشافك"
     tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     tagline.add_theme_color_override("font_color", Color(0.72, 0.84, 0.76))
     tagline.add_theme_font_size_override("font_size", 13)
@@ -1166,13 +1267,13 @@ func _create_main_menu() -> void:
 
     var welcome := Label.new()
     welcome.name = "MenuWelcome"
-    welcome.text = "Welcome, %s" % player_name
+    welcome.text = "مرحباً، %s" % player_name
     welcome.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     welcome.add_theme_font_size_override("font_size", 20)
     column.add_child(welcome)
 
     var outfit_caption := Label.new()
-    outfit_caption.text = "CHOOSE YOUR EXPLORER STYLE"
+    outfit_caption.text = "اختر مظهر المستكشف"
     outfit_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     outfit_caption.add_theme_font_size_override("font_size", 12)
     outfit_caption.add_theme_color_override("font_color", Color(0.72, 0.84, 0.76))
@@ -1180,34 +1281,34 @@ func _create_main_menu() -> void:
 
     outfit_option = OptionButton.new()
     outfit_option.name = "ExplorerStyle"
-    outfit_option.add_item("Forest Scout", 0)
-    outfit_option.add_item("River Wanderer", 1)
-    outfit_option.add_item("Amber Trail", 2)
-    outfit_option.add_item("Midnight Pine", 3)
+    outfit_option.add_item("كشاف الغابة", 0)
+    outfit_option.add_item("رحّالة النهر", 1)
+    outfit_option.add_item("درب الكهرمان", 2)
+    outfit_option.add_item("صنوبر الليل", 3)
     outfit_option.select(player_outfit_index)
     outfit_option.item_selected.connect(_on_outfit_selected)
     column.add_child(outfit_option)
 
     var start_button := Button.new()
-    start_button.text = "CONTINUE EXPLORING"
+    start_button.text = "متابعة اللعب"
     start_button.custom_minimum_size.y = 52
     start_button.pressed.connect(_close_main_menu)
     column.add_child(start_button)
 
     var multiplayer_button := Button.new()
-    multiplayer_button.text = "PLAY WITH A FRIEND"
+    multiplayer_button.text = "اللعب مع صديق عبر الواي فاي"
     multiplayer_button.custom_minimum_size.y = 46
     multiplayer_button.pressed.connect(_open_multiplayer_from_menu)
     column.add_child(multiplayer_button)
 
     var settings_button := Button.new()
-    settings_button.text = "SETTINGS"
+    settings_button.text = "الإعدادات"
     settings_button.custom_minimum_size.y = 46
     settings_button.pressed.connect(_open_settings_from_menu)
     column.add_child(settings_button)
 
     var hint := Label.new()
-    hint.text = "Your journey is saved automatically"
+    hint.text = "رحلتك وتقدمك يُحفظان تلقائياً"
     hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     hint.add_theme_color_override("font_color", Color(0.65, 0.73, 0.68))
     hint.add_theme_font_size_override("font_size", 12)
@@ -1391,7 +1492,7 @@ func _set_control_layout_edit(enabled: bool) -> void:
     layout_touch_index = -1
     pressed_actions.clear()
     if layout_status_label:
-        layout_status_label.text = "Drag buttons to move them. Tap Done when finished." if enabled else "Touch layout saved."
+        layout_status_label.text = "اسحب الأزرار لتغيير أماكنها ثم اضغط تم." if enabled else "تم حفظ ترتيب الأزرار."
     if joystick_base:
         joystick_base.modulate = Color(1.0, 0.8, 0.35, 0.92) if enabled else Color(1.0, 1.0, 1.0, 0.72)
 
@@ -1403,7 +1504,7 @@ func _reset_control_layout() -> void:
     _move_action_button("jump", Vector2(screen_size.x * 0.88, screen_size.y * 0.86))
     _save_game()
     if layout_status_label:
-        layout_status_label.text = "Default touch layout restored."
+        layout_status_label.text = "تمت استعادة ترتيب الأزرار الافتراضي."
 
 func _on_control_pressed(action: String) -> void:
     if control_layout_edit_mode:
@@ -1457,6 +1558,7 @@ func _create_minimap(layer: CanvasLayer) -> void:
     _paint_map_marker(map_image, valley_lookout_position, Color(1.0, 0.74, 0.35), 3)
     var map_texture := ImageTexture.create_from_image(map_image)
     minimap_panel = PanelContainer.new()
+    minimap_panel.theme = game_ui_theme
     minimap_panel.name = "WorldMinimap"
     minimap_panel.position = Vector2(get_viewport().get_visible_rect().size.x * 0.5 - 96.0, 58.0)
     minimap_panel.custom_minimum_size = Vector2(192.0, 218.0)
@@ -1470,13 +1572,13 @@ func _create_minimap(layer: CanvasLayer) -> void:
     map_column.add_child(header)
 
     var title := Label.new()
-    title.text = "WORLD MAP"
+    title.text = "خريطة العالم"
     title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     title.add_theme_font_size_override("font_size", 14)
     header.add_child(title)
 
     minimap_region_label = Label.new()
-    minimap_region_label.text = "Green Valley"
+    minimap_region_label.text = "الوادي الأخضر"
     minimap_region_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     minimap_region_label.add_theme_font_size_override("font_size", 12)
     map_column.add_child(minimap_region_label)
@@ -1539,15 +1641,16 @@ func _update_minimap() -> void:
     minimap_marker.rotation = player.rotation.y
     if minimap_region_label:
         if player.global_position.x > 125.0:
-            minimap_region_label.text = "Eastern Dunes"
+            minimap_region_label.text = "كثبان الشرق"
         elif player.global_position.z < -125.0:
-            minimap_region_label.text = "Northern Highlands"
+            minimap_region_label.text = "مرتفعات الشمال"
         else:
-            minimap_region_label.text = "Green Valley"
+            minimap_region_label.text = "الوادي الأخضر"
 
 func _create_network_panel(layer: CanvasLayer) -> void:
     var screen_size := get_viewport().get_visible_rect().size
     network_panel = PanelContainer.new()
+    network_panel.theme = game_ui_theme
     network_panel.name = "LANPanel"
     var network_width := minf(310.0, maxf(260.0, screen_size.x - 32.0))
     network_panel.position = Vector2(maxf(16.0, screen_size.x - network_width - 16.0), 18.0)
@@ -1559,18 +1662,18 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     network_panel.add_child(column)
 
     var title := Label.new()
-    title.text = "WORLDS  •  MOBILE MULTIPLAYER"
+    title.text = "اللعب الجماعي عبر الواي فاي"
     title.add_theme_color_override("font_color", Color(0.75, 0.92, 0.78))
     title.add_theme_font_size_override("font_size", 17)
     column.add_child(title)
 
     var player_name_row := HBoxContainer.new()
     var player_name_caption := Label.new()
-    player_name_caption.text = "Player name"
+    player_name_caption.text = "اسم اللاعب"
     player_name_row.add_child(player_name_caption)
     player_name_input = LineEdit.new()
     player_name_input.text = player_name
-    player_name_input.placeholder_text = "Choose your name"
+    player_name_input.placeholder_text = "اكتب اسمك داخل اللعبة"
     player_name_input.max_length = 18
     player_name_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     player_name_input.virtual_keyboard_enabled = true
@@ -1578,50 +1681,50 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     column.add_child(player_name_row)
 
     var apply_name_button := Button.new()
-    apply_name_button.text = "APPLY PLAYER NAME"
+    apply_name_button.text = "حفظ اسم اللاعب"
     apply_name_button.pressed.connect(_apply_player_name)
     column.add_child(apply_name_button)
 
     var host_button := Button.new()
-    host_button.text = "CREATE WORLD"
+    host_button.text = "إنشاء عالم واستضافة"
     host_button.custom_minimum_size.y = 40
     host_button.pressed.connect(_host_lan_game)
     column.add_child(host_button)
 
     host_ip_label = Label.new()
-    host_ip_label.text = "Your Wi-Fi IP will appear here"
+    host_ip_label.text = "عنوان هاتف المضيف يظهر هنا بعد إنشاء العالم"
     host_ip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(host_ip_label)
 
     address_input = LineEdit.new()
-    address_input.placeholder_text = "Enter host phone IP (same Wi-Fi)"
+    address_input.placeholder_text = "أدخل عنوان IP لهاتف المضيف"
     address_input.virtual_keyboard_enabled = true
     address_input.clear_button_enabled = true
     column.add_child(address_input)
 
     var join_button := Button.new()
-    join_button.text = "JOIN WORLD"
+    join_button.text = "الانضمام إلى العالم"
     join_button.custom_minimum_size.y = 40
     join_button.pressed.connect(_join_lan_game)
     column.add_child(join_button)
 
     var copy_ip_button := Button.new()
-    copy_ip_button.text = "COPY HOST IP"
+    copy_ip_button.text = "نسخ عنوان المضيف"
     copy_ip_button.pressed.connect(_copy_host_ip)
     column.add_child(copy_ip_button)
 
     var leave_button := Button.new()
-    leave_button.text = "LEAVE SESSION"
+    leave_button.text = "مغادرة الجلسة"
     leave_button.pressed.connect(_disconnect_lan_game)
     column.add_child(leave_button)
 
     network_status_label = Label.new()
-    network_status_label.text = "Phone-to-phone Wi-Fi • Host creates, friend joins"
+    network_status_label.text = "اتصلوا بنفس شبكة الواي فاي. هاتف يستضيف والثاني ينضم."
     network_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(network_status_label)
 
     var network_back_button := Button.new()
-    network_back_button.text = "BACK TO MAIN MENU"
+    network_back_button.text = "العودة إلى القائمة الرئيسية"
     network_back_button.custom_minimum_size.y = 42
     network_back_button.pressed.connect(_return_to_main_menu)
     column.add_child(network_back_button)
@@ -1697,7 +1800,7 @@ func _apply_player_name() -> void:
     player_name_input.text = player_name
     var welcome_label := main_menu_layer.find_child("MenuWelcome", true, false) as Label if main_menu_layer else null
     if welcome_label:
-        welcome_label.text = "Welcome, %s" % player_name
+        welcome_label.text = "مرحباً، %s" % player_name
     if lan_active:
         if multiplayer.is_server():
             network_player_names[1] = player_name
@@ -1718,6 +1821,7 @@ func _copy_host_ip() -> void:
 func _create_settings_panel(layer: CanvasLayer) -> void:
     var screen_size := get_viewport().get_visible_rect().size
     settings_panel = PanelContainer.new()
+    settings_panel.theme = game_ui_theme
     settings_panel.name = "PerformancePanel"
     var settings_width := minf(310.0, maxf(260.0, screen_size.x - 32.0))
     var settings_height := minf(360.0, maxf(260.0, screen_size.y - 32.0))
@@ -1735,22 +1839,22 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     scroll.add_child(column)
 
     var title := Label.new()
-    title.text = "DEVICE PERFORMANCE"
+    title.text = "إعدادات الرسوم والتحكم"
     title.add_theme_font_size_override("font_size", 15)
     column.add_child(title)
 
     var quality_row := HBoxContainer.new()
     var quality_label := Label.new()
-    quality_label.text = "Quality"
+    quality_label.text = "جودة الرسوم"
     quality_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     quality_row.add_child(quality_label)
 
     quality_option = OptionButton.new()
-    quality_option.add_item("Auto", 0)
-    quality_option.add_item("Low", 1)
-    quality_option.add_item("Balanced", 2)
-    quality_option.add_item("High", 3)
-    quality_option.add_item("Ultra", 4)
+    quality_option.add_item("تلقائي", 0)
+    quality_option.add_item("منخفض", 1)
+    quality_option.add_item("متوازن", 2)
+    quality_option.add_item("مرتفع", 3)
+    quality_option.add_item("فائق", 4)
     quality_option.select(0)
     quality_option.item_selected.connect(_on_quality_selected)
     quality_row.add_child(quality_option)
@@ -1758,7 +1862,7 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
 
     var fps_row := HBoxContainer.new()
     var fps_text := Label.new()
-    fps_text.text = "FPS limit"
+    fps_text.text = "حد الإطارات"
     fps_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     fps_row.add_child(fps_text)
 
@@ -1771,17 +1875,17 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     column.add_child(fps_row)
 
     fps_label = Label.new()
-    fps_label.text = "Actual FPS depends on the device and scene load."
+    fps_label.text = "عدد الإطارات الفعلي يعتمد على قوة الهاتف والمشهد."
     fps_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(fps_label)
 
     metrics_label = Label.new()
-    metrics_label.text = "Live: waiting for frame sample..."
+    metrics_label.text = "قراءة الأداء المباشر..."
     metrics_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(metrics_label)
 
     var sensitivity_label := Label.new()
-    sensitivity_label.text = "Camera sensitivity"
+    sensitivity_label.text = "حساسية الكاميرا"
     column.add_child(sensitivity_label)
     camera_sensitivity_slider = HSlider.new()
     camera_sensitivity_slider.min_value = 0.003
@@ -1792,7 +1896,7 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     column.add_child(camera_sensitivity_slider)
 
     var camera_distance_label := Label.new()
-    camera_distance_label.text = "Camera distance"
+    camera_distance_label.text = "بُعد الكاميرا"
     column.add_child(camera_distance_label)
     camera_distance_slider = HSlider.new()
     camera_distance_slider.min_value = 4.0
@@ -1803,7 +1907,7 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     column.add_child(camera_distance_slider)
 
     var fov_label := Label.new()
-    fov_label.text = "Camera field of view"
+    fov_label.text = "مجال رؤية الكاميرا"
     column.add_child(fov_label)
     camera_fov_slider = HSlider.new()
     camera_fov_slider.min_value = 55.0
@@ -1814,7 +1918,7 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     column.add_child(camera_fov_slider)
 
     var scale_label := Label.new()
-    scale_label.text = "Touch button size"
+    scale_label.text = "حجم أزرار اللمس"
     column.add_child(scale_label)
     control_scale_slider = HSlider.new()
     control_scale_slider.min_value = 0.75
@@ -1825,7 +1929,7 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     column.add_child(control_scale_slider)
 
     var opacity_label := Label.new()
-    opacity_label.text = "Touch button opacity"
+    opacity_label.text = "شفافية أزرار اللمس"
     column.add_child(opacity_label)
     button_opacity_slider = HSlider.new()
     button_opacity_slider.min_value = 0.4
@@ -1836,7 +1940,7 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     column.add_child(button_opacity_slider)
 
     var audio_title := Label.new()
-    audio_title.text = "Master volume"
+    audio_title.text = "مستوى الصوت العام"
     column.add_child(audio_title)
     master_volume_slider = HSlider.new()
     master_volume_slider.min_value = 0.0
@@ -1847,27 +1951,27 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     column.add_child(master_volume_slider)
 
     var layout_button := Button.new()
-    layout_button.text = "EDIT TOUCH BUTTONS"
+    layout_button.text = "تعديل أماكن الأزرار"
     layout_button.pressed.connect(_set_control_layout_edit.bind(true))
     column.add_child(layout_button)
 
     var done_layout_button := Button.new()
-    done_layout_button.text = "DONE / SAVE LAYOUT"
+    done_layout_button.text = "تم / حفظ الترتيب"
     done_layout_button.pressed.connect(_finish_control_layout_edit)
     column.add_child(done_layout_button)
 
     var reset_layout_button := Button.new()
-    reset_layout_button.text = "RESET BUTTON POSITIONS"
+    reset_layout_button.text = "إرجاع الأزرار لمكانها"
     reset_layout_button.pressed.connect(_reset_control_layout)
     column.add_child(reset_layout_button)
 
     layout_status_label = Label.new()
-    layout_status_label.text = "Move buttons and save your layout."
+    layout_status_label.text = "حرّك الأزرار للمكان المناسب ثم احفظ الترتيب."
     layout_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(layout_status_label)
 
     var settings_back_button := Button.new()
-    settings_back_button.text = "BACK TO MAIN MENU"
+    settings_back_button.text = "العودة إلى القائمة الرئيسية"
     settings_back_button.custom_minimum_size.y = 42
     settings_back_button.pressed.connect(_return_to_main_menu)
     column.add_child(settings_back_button)
@@ -2892,6 +2996,7 @@ func _create_resource_nodes() -> void:
 func _create_build_panel(layer: CanvasLayer) -> void:
     var screen_size := get_viewport().get_visible_rect().size
     build_panel = PanelContainer.new()
+    build_panel.theme = game_ui_theme
     build_panel.name = "CraftAndBuildPanel"
     build_panel.position = Vector2(screen_size.x * 0.32, screen_size.y * 0.24)
     build_panel.custom_minimum_size = Vector2(420.0, 0.0)
@@ -2903,7 +3008,7 @@ func _create_build_panel(layer: CanvasLayer) -> void:
     build_panel.add_child(column)
 
     var title := Label.new()
-    title.text = "FIELD CRAFTING  •  SHARED SUPPLIES"
+    title.text = "التصنيع والبناء • الموارد المشتركة"
     title.add_theme_font_size_override("font_size", 18)
     column.add_child(title)
 
@@ -2912,53 +3017,53 @@ func _create_build_panel(layer: CanvasLayer) -> void:
     column.add_child(inventory_label)
 
     var hint := Label.new()
-    hint.text = "Collect nearby materials with USE, then place structures in front of you."
+    hint.text = "اجمع المواد بزر التفاعل ثم ضع البناء أمامك."
     hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(hint)
 
     var rotate_row := HBoxContainer.new()
     var rotate_left := Button.new()
-    rotate_left.text = "ROTATE  -15°"
+    rotate_left.text = "تدوير ‎-15°"
     rotate_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     rotate_left.pressed.connect(_rotate_build_preview.bind(-15.0))
     rotate_row.add_child(rotate_left)
     var rotate_right := Button.new()
-    rotate_right.text = "ROTATE  +15°"
+    rotate_right.text = "تدوير ‎+15°"
     rotate_right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     rotate_right.pressed.connect(_rotate_build_preview.bind(15.0))
     rotate_row.add_child(rotate_right)
     column.add_child(rotate_row)
 
     var fire_button := Button.new()
-    fire_button.text = "PLACE CAMPFIRE  •  3 WOOD + 2 STONE"
+    fire_button.text = "موقد نار • 3 خشب + 2 حجر"
     fire_button.custom_minimum_size.y = 46.0
     fire_button.pressed.connect(_request_build.bind("campfire"))
     column.add_child(fire_button)
     build_recipe_buttons["campfire"] = fire_button
 
     var crate_button := Button.new()
-    crate_button.text = "PLACE STORAGE CRATE  •  5 WOOD + 2 STONE"
+    crate_button.text = "صندوق تخزين • 5 خشب + 2 حجر"
     crate_button.custom_minimum_size.y = 46.0
     crate_button.pressed.connect(_request_build.bind("storage"))
     column.add_child(crate_button)
     build_recipe_buttons["storage"] = crate_button
 
     var shelter_button := Button.new()
-    shelter_button.text = "PLACE WOOD SHELTER  •  12 WOOD + 6 FIBER + 4 STONE"
+    shelter_button.text = "مأوى خشبي • 12 خشب + 6 ألياف + 4 حجر"
     shelter_button.custom_minimum_size.y = 46.0
     shelter_button.pressed.connect(_request_build.bind("shelter"))
     column.add_child(shelter_button)
     build_recipe_buttons["shelter"] = shelter_button
 
     var cabin_button := Button.new()
-    cabin_button.text = "BUILD TIMBER CABIN  •  14 WOOD + 6 STONE + 6 FIBER"
+    cabin_button.text = "كوخ خشبي • 14 خشب + 6 حجر + 6 ألياف"
     cabin_button.custom_minimum_size.y = 48.0
     cabin_button.pressed.connect(_request_build.bind("cabin"))
     column.add_child(cabin_button)
     build_recipe_buttons["cabin"] = cabin_button
 
     var close_button := Button.new()
-    close_button.text = "CLOSE"
+    close_button.text = "إغلاق"
     close_button.pressed.connect(_toggle_build_panel.bind(false))
     column.add_child(close_button)
 
@@ -4999,7 +5104,7 @@ func _load_game() -> void:
     if main_menu_layer:
         var menu_welcome := main_menu_layer.find_child("MenuWelcome", true, false) as Label
         if menu_welcome:
-            menu_welcome.text = "Welcome, %s" % player_name
+            menu_welcome.text = "مرحباً، %s" % player_name
     quality_index = clampi(int(config.get_value("settings", "quality_index", quality_index)), 0, 4)
     current_fps_target = clampi(int(config.get_value("settings", "fps_target", current_fps_target)), 20, 120)
     var allowed_fps := [20, 30, 45, 60, 90, 120]
@@ -5141,7 +5246,7 @@ func _on_fps_selected(index: int) -> void:
     current_fps_target = fps_option.get_item_id(index)
     Engine.max_fps = current_fps_target
     if fps_label:
-        fps_label.text = "FPS cap: %d  •  Device limit may be lower" % current_fps_target
+        fps_label.text = "حد الإطارات: %d  •  قد يكون الهاتف أقل" % current_fps_target
 
 func _update_adaptive_quality(delta: float) -> void:
     if quality_index != 0:
@@ -5167,7 +5272,7 @@ func _update_adaptive_quality(delta: float) -> void:
     if not is_equal_approx(next_density, current_tree_density):
         _set_tree_density(next_density)
     if fps_label:
-        fps_label.text = "Auto  •  %d FPS  •  Trees %d%%" % [
+        fps_label.text = "تلقائي  •  %d إطار  •  كثافة الأشجار %d%%" % [
             actual_fps,
             roundi(current_tree_density * 100.0)
         ]
