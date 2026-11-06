@@ -2843,8 +2843,37 @@ func _create_village() -> void:
             "target": npc.position,
             "timer": npc_rng.randf_range(1.0, 4.0),
             "speed": npc_rng.randf_range(0.65, 1.05),
-            "phase": npc_rng.randf_range(0.0, TAU)
+            "phase": npc_rng.randf_range(0.0, TAU),
+            "schedule_slot": -1
         })
+
+func _villager_schedule_slot(hour: float) -> int:
+    if hour >= 6.0 and hour < 10.0:
+        return 0 # Morning market
+    if hour >= 10.0 and hour < 16.0:
+        return 1 # Village lane and neighbours
+    if hour >= 16.0 and hour < 21.0:
+        return 2 # Evening water stop
+    return 3 # Home at night
+
+func _villager_schedule_target(index: int, home: Vector3, hour: float) -> Vector3:
+    var slot := _villager_schedule_slot(hour)
+    var anchor := home
+    match slot:
+        0:
+            anchor = Vector3(-82.0, 0.0, 46.0)
+        1:
+            anchor = Vector3(-82.0, 0.0, 76.0)
+        2:
+            anchor = village_well_position
+        _:
+            return home
+    var angle := float(index) * TAU / 8.0
+    var radius := 1.8 + float(index % 3) * 0.65
+    anchor.x += cos(angle) * radius
+    anchor.z += sin(angle) * radius
+    anchor.y = _height_at(anchor.x, anchor.z)
+    return anchor
 
 func _update_village_agents(delta: float) -> void:
     if village_agents.is_empty():
@@ -2874,10 +2903,17 @@ func _update_village_agents(delta: float) -> void:
         var home: Vector3 = villager["home"]
         var target: Vector3 = villager["target"]
         var timer := float(villager["timer"]) - step_delta
-        if timer <= 0.0 or Vector2(root.position.x - target.x, root.position.z - target.z).length() < 0.55:
+        var current_schedule := _villager_schedule_slot(world_clock)
+        if int(villager.get("schedule_slot", -1)) != current_schedule:
+            target = _villager_schedule_target(index, home, world_clock)
+            timer = randf_range(4.0, 7.0)
+            villager["schedule_slot"] = current_schedule
+        elif timer <= 0.0 or Vector2(root.position.x - target.x, root.position.z - target.z).length() < 0.55:
+            var schedule_anchor := _villager_schedule_target(index, home, world_clock)
             var angle := randf() * TAU
-            var distance := randf_range(1.5, 7.0)
-            target = home + Vector3(cos(angle) * distance, 0.0, sin(angle) * distance)
+            var distance := randf_range(0.8, 2.5)
+            target = schedule_anchor + Vector3(cos(angle) * distance, 0.0, sin(angle) * distance)
+            target.y = _height_at(target.x, target.z)
             timer = randf_range(2.0, 6.0)
         var direction := Vector3(target.x - root.position.x, 0.0, target.z - root.position.z)
         if direction.length() > 0.12:
@@ -3807,6 +3843,27 @@ func _start_gameplay_smoke_test() -> void:
     first_villager_root.position = original_villager_position
     if str(villager_talk_test.get("action", "")) != "talk":
         push_error("GAMEPLAY_SMOKE_FAIL: approaching a villager did not offer dialogue")
+        get_tree().quit(1)
+        return
+    var routine_home: Vector3 = village_agents[0]["home"]
+    var morning_routine := _villager_schedule_target(0, routine_home, 8.0)
+    var midday_routine := _villager_schedule_target(0, routine_home, 13.0)
+    var evening_routine := _villager_schedule_target(0, routine_home, 18.0)
+    var night_routine := _villager_schedule_target(0, routine_home, 23.0)
+    if _villager_schedule_slot(8.0) != 0 or Vector2(morning_routine.x + 82.0, morning_routine.z - 46.0).length() > 4.5:
+        push_error("GAMEPLAY_SMOKE_FAIL: villagers did not schedule a morning market visit")
+        get_tree().quit(1)
+        return
+    if _villager_schedule_slot(13.0) != 1 or Vector2(midday_routine.x + 82.0, midday_routine.z - 76.0).length() > 4.5:
+        push_error("GAMEPLAY_SMOKE_FAIL: villagers did not schedule a midday village visit")
+        get_tree().quit(1)
+        return
+    if _villager_schedule_slot(18.0) != 2 or Vector2(evening_routine.x - village_well_position.x, evening_routine.z - village_well_position.z).length() > 4.5:
+        push_error("GAMEPLAY_SMOKE_FAIL: villagers did not schedule an evening well visit")
+        get_tree().quit(1)
+        return
+    if _villager_schedule_slot(23.0) != 3 or night_routine.distance_to(routine_home) > 0.01:
+        push_error("GAMEPLAY_SMOKE_FAIL: villagers did not return home at night")
         get_tree().quit(1)
         return
 
