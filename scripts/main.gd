@@ -27,9 +27,12 @@ var sky_material: ProceduralSkyMaterial
 var sun_light: DirectionalLight3D
 var tree_trunks: MultiMeshInstance3D
 var tree_canopies: MultiMeshInstance3D
+var pine_trunks: MultiMeshInstance3D
+var pine_canopies: MultiMeshInstance3D
 var grass_field: MultiMeshInstance3D
 var rock_field: MultiMeshInstance3D
 var total_tree_instances := 0
+var total_pine_instances := 0
 var total_grass_instances := 0
 var total_rock_instances := 0
 var current_tree_density := 1.0
@@ -96,6 +99,8 @@ func _ready() -> void:
     print("WORLDS_STAGE river")
     _create_forest()
     print("WORLDS_STAGE forest")
+    _create_pine_forest()
+    print("WORLDS_STAGE pine_forest")
     _create_environment_details()
     print("WORLDS_STAGE environment_details")
     _create_foraging_bushes()
@@ -155,8 +160,15 @@ func _create_environment() -> void:
 func _height_at(x: float, z: float) -> float:
     var broad_hills := sin(x * 0.013) * 6.5 + cos(z * 0.011) * 7.0
     broad_hills += sin((x + z) * 0.008) * 5.0
+    var desert_weight := clampf((x - 125.0) / 105.0, 0.0, 1.0)
+    var dunes := sin(x * 0.031 + cos(z * 0.022) * 1.8) * 1.25 + cos(z * 0.038) * 0.75
+    broad_hills = lerpf(broad_hills, dunes, desert_weight)
+    var snow_weight := clampf((-z - 125.0) / 100.0, 0.0, 1.0)
+    var alpine := sin(x * 0.018) * 8.0 + cos(z * 0.021) * 6.0
+    alpine += maxf(0.0, sin((x + z) * 0.028)) * 15.0
+    broad_hills = lerpf(broad_hills, alpine, snow_weight)
     var ridge_wave := maxf(0.0, sin((x - z) * 0.021 + cos(z * 0.009)))
-    var ridges := ridge_wave * ridge_wave * 8.5
+    var ridges := ridge_wave * ridge_wave * lerpf(8.5, 3.0, desert_weight)
     var river_bank: float = absf(x - sin(z * 0.018) * 18.0)
     var valley: float = -maxf(0.0, 1.0 - river_bank / 26.0) * 2.8
     var upland := maxf(0.0, sin(x * 0.004 + z * 0.006)) * 4.0
@@ -179,6 +191,12 @@ func _create_terrain() -> void:
             var variation: float = clampf((y + 3.0) / 24.0, 0.0, 1.0)
             var ground_breakup := sin(x * 0.19) * cos(z * 0.16) * 0.045
             tint = tint.lerp(Color(0.43, 0.49, 0.30), clampf(variation * 0.62 + ground_breakup, 0.0, 0.72))
+            var desert_weight := clampf((x - 125.0) / 105.0, 0.0, 1.0)
+            var snow_weight := clampf((-z - 125.0) / 100.0, 0.0, 1.0)
+            tint = tint.lerp(Color(0.66, 0.53, 0.31), desert_weight)
+            tint = tint.lerp(Color(0.76, 0.82, 0.83), snow_weight)
+            var exposed_rock := clampf((y - 20.0) / 12.0, 0.0, 0.68)
+            tint = tint.lerp(Color(0.42, 0.44, 0.43), exposed_rock)
             colors.append(tint)
 
     for z_index in range(GRID_STEPS):
@@ -277,6 +295,8 @@ func _create_forest() -> void:
         var z := rng.randf_range(-WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
         if abs(x - sin(z * 0.018) * 18.0) < 13.0:
             continue
+        if x > 145.0 or z < -145.0:
+            continue
         if Vector2(x, z).length() < 12.0:
             continue
         tree_positions.append({
@@ -285,6 +305,81 @@ func _create_forest() -> void:
         })
 
     _create_tree_instances(tree_positions)
+
+func _create_pine_forest() -> void:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = 20261109
+    var pine_positions: Array[Dictionary] = []
+    for i in range(190):
+        var x := rng.randf_range(-WORLD_SIZE * 0.43, WORLD_SIZE * 0.43)
+        var z := rng.randf_range(-WORLD_SIZE * 0.44, -WORLD_SIZE * 0.29)
+        if absf(x - sin(z * 0.018) * 18.0) < 14.0:
+            continue
+        pine_positions.append({
+            "position": Vector3(x, _height_at(x, z), z),
+            "scale": rng.randf_range(0.85, 1.35)
+        })
+
+    if pine_positions.is_empty():
+        return
+
+    var trunk_mesh := CylinderMesh.new()
+    trunk_mesh.top_radius = 0.10
+    trunk_mesh.bottom_radius = 0.19
+    trunk_mesh.height = 1.8
+    var canopy_mesh := ConeMesh.new()
+    canopy_mesh.top_radius = 0.035
+    canopy_mesh.bottom_radius = 1.0
+    canopy_mesh.height = 3.7
+    canopy_mesh.radial_segments = 7
+
+    var trunk_multi := MultiMesh.new()
+    trunk_multi.transform_format = MultiMesh.TRANSFORM_3D
+    trunk_multi.use_colors = true
+    trunk_multi.mesh = trunk_mesh
+    trunk_multi.instance_count = pine_positions.size()
+    var canopy_multi := MultiMesh.new()
+    canopy_multi.transform_format = MultiMesh.TRANSFORM_3D
+    canopy_multi.use_colors = true
+    canopy_multi.mesh = canopy_mesh
+    canopy_multi.instance_count = pine_positions.size()
+
+    var trunk_material := StandardMaterial3D.new()
+    trunk_material.vertex_color_use_as_albedo = true
+    trunk_material.albedo_color = Color(0.28, 0.19, 0.12)
+    trunk_material.roughness = 1.0
+    var canopy_material := StandardMaterial3D.new()
+    canopy_material.vertex_color_use_as_albedo = true
+    canopy_material.albedo_color = Color(0.065, 0.20, 0.16)
+    canopy_material.roughness = 0.95
+
+    for i in range(pine_positions.size()):
+        var data: Dictionary = pine_positions[i]
+        var pos: Vector3 = data["position"]
+        var scale: float = data["scale"]
+        trunk_multi.set_instance_transform(i, Transform3D(
+            Basis.from_scale(Vector3(scale, scale, scale)),
+            pos + Vector3(0, 0.9 * scale, 0)
+        ))
+        trunk_multi.set_instance_color(i, Color(0.22, 0.14, 0.09))
+        canopy_multi.set_instance_transform(i, Transform3D(
+            Basis.from_scale(Vector3(scale, scale * 1.1, scale)),
+            pos + Vector3(0, 2.55 * scale, 0)
+        ))
+        canopy_multi.set_instance_color(i, Color(0.035, 0.15, 0.12).lerp(Color(0.11, 0.29, 0.23), rng.randf() * 0.8))
+
+    pine_trunks = MultiMeshInstance3D.new()
+    pine_trunks.name = "SnowPineTrunks"
+    pine_trunks.multimesh = trunk_multi
+    pine_trunks.material_override = trunk_material
+    add_child(pine_trunks)
+
+    pine_canopies = MultiMeshInstance3D.new()
+    pine_canopies.name = "SnowPineCanopies"
+    pine_canopies.multimesh = canopy_multi
+    pine_canopies.material_override = canopy_material
+    add_child(pine_canopies)
+    total_pine_instances = pine_positions.size()
 
 func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
     if tree_positions.is_empty():
@@ -379,7 +474,9 @@ func _create_environment_details() -> void:
     for i in range(grass_multi.instance_count):
         var x := rng.randf_range(-WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
         var z := rng.randf_range(-WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
-        if absf(x - sin(z * 0.018) * 18.0) < 9.0 or Vector2(x, z).length() < 20.0:
+        var desert_zone := x > 145.0
+        var snow_zone := z < -145.0
+        if absf(x - sin(z * 0.018) * 18.0) < 9.0 or Vector2(x, z).length() < 20.0 or (desert_zone and rng.randf() < 0.94) or (snow_zone and rng.randf() < 0.70):
             grass_multi.set_instance_transform(i, Transform3D(Basis.IDENTITY, Vector3(0, -1000, 0)))
             continue
         var height_scale := rng.randf_range(0.65, 1.35)
@@ -1863,6 +1960,11 @@ func _set_tree_density(density: float) -> void:
         tree_trunks.multimesh.visible_instance_count = visible_count
     if tree_canopies and tree_canopies.multimesh:
         tree_canopies.multimesh.visible_instance_count = visible_count
+    var visible_pines := clampi(roundi(float(total_pine_instances) * current_tree_density), 1, maxi(1, total_pine_instances))
+    if pine_trunks and pine_trunks.multimesh:
+        pine_trunks.multimesh.visible_instance_count = visible_pines
+    if pine_canopies and pine_canopies.multimesh:
+        pine_canopies.multimesh.visible_instance_count = visible_pines
     if grass_field and grass_field.multimesh:
         grass_field.multimesh.visible_instance_count = clampi(roundi(float(total_grass_instances) * current_tree_density), 1, total_grass_instances)
     if rock_field and rock_field.multimesh:
