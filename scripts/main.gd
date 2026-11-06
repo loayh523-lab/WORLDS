@@ -1968,7 +1968,7 @@ func _spawn_building_visual(build_type: String, position: Vector3, facing: float
             var open_door := _village_box(root, "Cabin_Open_Door", Vector3(1.65, 3.15, 0.12), Vector3(-1.82, 1.58, -2.98), cabin_trim)
             open_door.rotation.y = -0.42
             for side in [-1.0, 1.0]:
-                var window_z := side * 1.42
+                var window_z: float = float(side) * 1.42
                 _village_box(root, "Cabin_Window_Glass", Vector3(0.08, 1.22, 1.35), Vector3(-3.04, 2.45, window_z), cabin_glass)
                 _village_box(root, "Cabin_Window_Glass", Vector3(0.08, 1.22, 1.35), Vector3(3.04, 2.45, window_z), cabin_glass)
                 _village_box(root, "Cabin_Window_Trim", Vector3(0.16, 1.42, 1.55), Vector3(-3.08, 2.45, window_z), cabin_trim)
