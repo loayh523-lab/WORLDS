@@ -650,14 +650,18 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     var screen_size := get_viewport().get_visible_rect().size
     settings_panel = PanelContainer.new()
     settings_panel.name = "PerformancePanel"
-    settings_panel.position = Vector2(screen_size.x - 330.0, 340.0)
-    settings_panel.custom_minimum_size = Vector2(310.0, 0.0)
+    settings_panel.position = Vector2(screen_size.x - 330.0, maxf(120.0, screen_size.y - 390.0))
+    settings_panel.custom_minimum_size = Vector2(310.0, 360.0)
     layer.add_child(settings_panel)
 
-    var panel := settings_panel
+    var scroll := ScrollContainer.new()
+    scroll.custom_minimum_size = Vector2(310.0, 350.0)
+    settings_panel.add_child(scroll)
+
     var column := VBoxContainer.new()
+    column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     column.add_theme_constant_override("separation", 4)
-    panel.add_child(column)
+    scroll.add_child(column)
 
     var title := Label.new()
     title.text = "DEVICE PERFORMANCE"
