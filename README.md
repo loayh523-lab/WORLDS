@@ -36,4 +36,4 @@ GitHub Actions runs a headless project import and a short main-scene smoke test 
 
 No Android APK has been built or tested yet. Android export still needs to be configured and tested after the scene is validated in Godot and on a real device.
 
-See [Project Status](docs/PROJECT_STATUS.md) for implemented features and the next development milestones.
+See [Project Status](PROJECT_STATUS.md) for implemented features and the next development milestones.
