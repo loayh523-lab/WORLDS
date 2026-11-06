@@ -86,6 +86,11 @@ var action_captions: Dictionary = {}
 var settings_panel: PanelContainer
 var layout_status_label: Label
 var metrics_label: Label
+var camera_sensitivity_slider: HSlider
+var camera_distance_slider: HSlider
+var camera_fov_slider: HSlider
+var control_scale_slider: HSlider
+var button_opacity_slider: HSlider
 var metrics_refresh_timer := 0.0
 
 func _ready() -> void:
@@ -117,6 +122,11 @@ func _ready() -> void:
     _create_hud()
     print("WORLDS_STAGE hud")
     _load_game()
+    _on_camera_distance_changed(camera_distance)
+    _on_camera_fov_changed(camera_fov)
+    _on_button_opacity_changed(button_opacity)
+    _on_control_scale_changed(control_scale)
+    _sync_settings_sliders()
     _apply_quality_preset(0)
     Engine.max_fps = current_fps_target
     var command_args := OS.get_cmdline_user_args()
@@ -916,57 +926,57 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     var sensitivity_label := Label.new()
     sensitivity_label.text = "Camera sensitivity"
     column.add_child(sensitivity_label)
-    var sensitivity_slider := HSlider.new()
-    sensitivity_slider.min_value = 0.003
-    sensitivity_slider.max_value = 0.012
-    sensitivity_slider.step = 0.001
-    sensitivity_slider.value = camera_sensitivity
-    sensitivity_slider.value_changed.connect(_on_camera_sensitivity_changed)
-    column.add_child(sensitivity_slider)
+    camera_sensitivity_slider = HSlider.new()
+    camera_sensitivity_slider.min_value = 0.003
+    camera_sensitivity_slider.max_value = 0.012
+    camera_sensitivity_slider.step = 0.001
+    camera_sensitivity_slider.value = camera_sensitivity
+    camera_sensitivity_slider.value_changed.connect(_on_camera_sensitivity_changed)
+    column.add_child(camera_sensitivity_slider)
 
     var camera_distance_label := Label.new()
     camera_distance_label.text = "Camera distance"
     column.add_child(camera_distance_label)
-    var distance_slider := HSlider.new()
-    distance_slider.min_value = 4.0
-    distance_slider.max_value = 12.0
-    distance_slider.step = 0.5
-    distance_slider.value = camera_distance
-    distance_slider.value_changed.connect(_on_camera_distance_changed)
-    column.add_child(distance_slider)
+    camera_distance_slider = HSlider.new()
+    camera_distance_slider.min_value = 4.0
+    camera_distance_slider.max_value = 12.0
+    camera_distance_slider.step = 0.5
+    camera_distance_slider.value = camera_distance
+    camera_distance_slider.value_changed.connect(_on_camera_distance_changed)
+    column.add_child(camera_distance_slider)
 
     var fov_label := Label.new()
     fov_label.text = "Camera field of view"
     column.add_child(fov_label)
-    var fov_slider := HSlider.new()
-    fov_slider.min_value = 55.0
-    fov_slider.max_value = 85.0
-    fov_slider.step = 1.0
-    fov_slider.value = camera_fov
-    fov_slider.value_changed.connect(_on_camera_fov_changed)
-    column.add_child(fov_slider)
+    camera_fov_slider = HSlider.new()
+    camera_fov_slider.min_value = 55.0
+    camera_fov_slider.max_value = 85.0
+    camera_fov_slider.step = 1.0
+    camera_fov_slider.value = camera_fov
+    camera_fov_slider.value_changed.connect(_on_camera_fov_changed)
+    column.add_child(camera_fov_slider)
 
     var scale_label := Label.new()
     scale_label.text = "Touch button size"
     column.add_child(scale_label)
-    var scale_slider := HSlider.new()
-    scale_slider.min_value = 0.75
-    scale_slider.max_value = 1.35
-    scale_slider.step = 0.05
-    scale_slider.value = control_scale
-    scale_slider.value_changed.connect(_on_control_scale_changed)
-    column.add_child(scale_slider)
+    control_scale_slider = HSlider.new()
+    control_scale_slider.min_value = 0.75
+    control_scale_slider.max_value = 1.35
+    control_scale_slider.step = 0.05
+    control_scale_slider.value = control_scale
+    control_scale_slider.value_changed.connect(_on_control_scale_changed)
+    column.add_child(control_scale_slider)
 
     var opacity_label := Label.new()
     opacity_label.text = "Touch button opacity"
     column.add_child(opacity_label)
-    var opacity_slider := HSlider.new()
-    opacity_slider.min_value = 0.4
-    opacity_slider.max_value = 1.0
-    opacity_slider.step = 0.05
-    opacity_slider.value = button_opacity
-    opacity_slider.value_changed.connect(_on_button_opacity_changed)
-    column.add_child(opacity_slider)
+    button_opacity_slider = HSlider.new()
+    button_opacity_slider.min_value = 0.4
+    button_opacity_slider.max_value = 1.0
+    button_opacity_slider.step = 0.05
+    button_opacity_slider.value = button_opacity
+    button_opacity_slider.value_changed.connect(_on_button_opacity_changed)
+    column.add_child(button_opacity_slider)
 
     var layout_button := Button.new()
     layout_button.text = "EDIT TOUCH BUTTONS"
@@ -990,6 +1000,18 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
 
 func _on_camera_sensitivity_changed(value: float) -> void:
     camera_sensitivity = clampf(value, 0.003, 0.012)
+
+func _sync_settings_sliders() -> void:
+    if camera_sensitivity_slider:
+        camera_sensitivity_slider.value = camera_sensitivity
+    if camera_distance_slider:
+        camera_distance_slider.value = camera_distance
+    if camera_fov_slider:
+        camera_fov_slider.value = camera_fov
+    if control_scale_slider:
+        control_scale_slider.value = control_scale
+    if button_opacity_slider:
+        button_opacity_slider.value = button_opacity
 
 func _on_camera_distance_changed(value: float) -> void:
     camera_distance = clampf(value, 4.0, 12.0)
@@ -1081,9 +1103,9 @@ func _rotate_camera(relative: Vector2, pointer_position: Vector2) -> void:
     if pointer_position.x < screen_size.x * 0.40:
         return
 
-    camera_pivot.rotation.y -= relative.x * CAMERA_DRAG_SENSITIVITY
+    camera_pivot.rotation.y -= relative.x * camera_sensitivity
     camera.rotation.x = clamp(
-        camera.rotation.x - relative.y * CAMERA_DRAG_SENSITIVITY,
+        camera.rotation.x - relative.y * camera_sensitivity,
         deg_to_rad(-38.0),
         deg_to_rad(-5.0)
     )
