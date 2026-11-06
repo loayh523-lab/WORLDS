@@ -1502,7 +1502,8 @@ func _process(delta: float) -> void:
             roundi(hunger),
             roundi(thirst),
             roundi(rest),
-            note
+            note,
+            objective
         ]
         if health_bar:
             health_bar.value = health
