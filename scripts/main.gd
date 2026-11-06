@@ -996,7 +996,8 @@ func _create_main_menu() -> void:
     main_menu_layer.add_child(center)
 
     main_menu_panel = PanelContainer.new()
-    main_menu_panel.custom_minimum_size = Vector2(390.0, 0.0)
+    var menu_screen_size := get_viewport().get_visible_rect().size
+    main_menu_panel.custom_minimum_size = Vector2(minf(390.0, maxf(280.0, menu_screen_size.x - 32.0)), 0.0)
     center.add_child(main_menu_panel)
 
     var column := VBoxContainer.new()
@@ -1006,7 +1007,7 @@ func _create_main_menu() -> void:
 
     var logo := TextureRect.new()
     logo.texture = load("res://assets/worlds_logo.svg")
-    logo.custom_minimum_size = Vector2(330.0, 110.0)
+    logo.custom_minimum_size = Vector2(minf(330.0, menu_screen_size.x - 64.0), 110.0)
     logo.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
     logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
     column.add_child(logo)
@@ -1076,6 +1077,14 @@ func _open_settings_from_menu() -> void:
         settings_panel.visible = true
     if network_panel:
         network_panel.visible = false
+
+func _return_to_main_menu() -> void:
+    if settings_panel:
+        settings_panel.visible = false
+    if network_panel:
+        network_panel.visible = false
+    if main_menu_layer:
+        main_menu_layer.visible = true
 
 func _create_survival_bar(parent: VBoxContainer, caption: String, initial_value: float) -> ProgressBar:
     var row := HBoxContainer.new()
@@ -1370,8 +1379,9 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     var screen_size := get_viewport().get_visible_rect().size
     network_panel = PanelContainer.new()
     network_panel.name = "LANPanel"
-    network_panel.position = Vector2(screen_size.x - 330.0, 18.0)
-    network_panel.custom_minimum_size = Vector2(310.0, 0.0)
+    var network_width := minf(310.0, maxf(260.0, screen_size.x - 32.0))
+    network_panel.position = Vector2(maxf(16.0, screen_size.x - network_width - 16.0), 18.0)
+    network_panel.custom_minimum_size = Vector2(network_width, 0.0)
     layer.add_child(network_panel)
 
     var column := VBoxContainer.new()
@@ -1425,6 +1435,11 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     join_button.pressed.connect(_join_lan_game)
     column.add_child(join_button)
 
+    var copy_ip_button := Button.new()
+    copy_ip_button.text = "COPY HOST IP"
+    copy_ip_button.pressed.connect(_copy_host_ip)
+    column.add_child(copy_ip_button)
+
     var leave_button := Button.new()
     leave_button.text = "LEAVE SESSION"
     leave_button.pressed.connect(_disconnect_lan_game)
@@ -1434,6 +1449,12 @@ func _create_network_panel(layer: CanvasLayer) -> void:
     network_status_label.text = "Phone-to-phone Wi-Fi • Host creates, friend joins"
     network_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(network_status_label)
+
+    var network_back_button := Button.new()
+    network_back_button.text = "BACK TO MAIN MENU"
+    network_back_button.custom_minimum_size.y = 42
+    network_back_button.pressed.connect(_return_to_main_menu)
+    column.add_child(network_back_button)
     network_panel.visible = false
 
 func _apply_player_name() -> void:
@@ -1444,19 +1465,38 @@ func _apply_player_name() -> void:
         clean_name = "Wanderer"
     player_name = clean_name.substr(0, 18)
     player_name_input.text = player_name
+    var welcome_label := main_menu_layer.find_child("MenuWelcome", true, false) as Label if main_menu_layer else null
+    if welcome_label:
+        welcome_label.text = "Welcome, %s" % player_name
+    if lan_active:
+        if multiplayer.is_server():
+            network_player_names[1] = player_name
+            rpc("_rpc_set_remote_player_name", 1, player_name)
+        elif multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+            rpc_id(1, "_rpc_submit_player_name", player_name)
     _show_status_note("Player name saved: " + player_name)
     _save_game()
+
+func _copy_host_ip() -> void:
+    var address := _get_lan_ipv4()
+    if address == "Wi-Fi IP not detected":
+        _set_network_status("Could not detect Wi-Fi IP. Check the phone connection.")
+        return
+    DisplayServer.clipboard_set(address)
+    _set_network_status("Host IP copied: %s  •  UDP %d" % [address, LAN_PORT])
 
 func _create_settings_panel(layer: CanvasLayer) -> void:
     var screen_size := get_viewport().get_visible_rect().size
     settings_panel = PanelContainer.new()
     settings_panel.name = "PerformancePanel"
-    settings_panel.position = Vector2(screen_size.x - 330.0, maxf(120.0, screen_size.y - 390.0))
-    settings_panel.custom_minimum_size = Vector2(310.0, 360.0)
+    var settings_width := minf(310.0, maxf(260.0, screen_size.x - 32.0))
+    var settings_height := minf(360.0, maxf(260.0, screen_size.y - 32.0))
+    settings_panel.position = Vector2(maxf(16.0, screen_size.x - settings_width - 16.0), 16.0)
+    settings_panel.custom_minimum_size = Vector2(settings_width, settings_height)
     layer.add_child(settings_panel)
 
     var scroll := ScrollContainer.new()
-    scroll.custom_minimum_size = Vector2(310.0, 350.0)
+    scroll.custom_minimum_size = Vector2(settings_width - 12.0, settings_height - 12.0)
     settings_panel.add_child(scroll)
 
     var column := VBoxContainer.new()
@@ -1595,6 +1635,12 @@ func _create_settings_panel(layer: CanvasLayer) -> void:
     layout_status_label.text = "Move buttons and save your layout."
     layout_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     column.add_child(layout_status_label)
+
+    var settings_back_button := Button.new()
+    settings_back_button.text = "BACK TO MAIN MENU"
+    settings_back_button.custom_minimum_size.y = 42
+    settings_back_button.pressed.connect(_return_to_main_menu)
+    column.add_child(settings_back_button)
     settings_panel.visible = false
 
 func _on_master_volume_changed(value: float) -> void:
@@ -3913,6 +3959,7 @@ func _disconnect_lan_game() -> void:
             avatar.queue_free()
     network_remote_players.clear()
     network_remote_targets.clear()
+    network_player_names = {1: player_name}
     if network_status_label:
         _set_network_status("Offline  •  Ready to host or join")
 
@@ -3923,14 +3970,14 @@ func _on_peer_connected(peer_id: int) -> void:
     _ensure_remote_player(peer_id, spawn_position, 0.0)
     network_player_names[peer_id] = "PLAYER %d" % peer_id
     rpc("_rpc_spawn_remote_player", peer_id, spawn_position, 0.0)
-    _set_network_status("Player connected  •  Waiting for first movement")
+    _set_network_status("Player connected  •  %d/8 players" % (multiplayer.get_peers().size() + 1))
 
 func _on_peer_disconnected(peer_id: int) -> void:
     _remove_remote_player(peer_id)
     network_player_names.erase(peer_id)
     if multiplayer.is_server():
         rpc("_rpc_remove_remote_player", peer_id)
-    _set_network_status("A player left the world")
+    _set_network_status("Player left  •  %d/8 players" % (multiplayer.get_peers().size() + 1) if multiplayer.is_server() else "A player left the world")
 
 func _on_connected_to_server() -> void:
     lan_active = true
@@ -4087,6 +4134,7 @@ func _rpc_submit_player_name(requested_name: String) -> void:
     if clean_name.is_empty():
         clean_name = "Wanderer"
     network_player_names[sender] = clean_name
+    _rpc_set_remote_player_name(sender, clean_name)
     rpc("_rpc_set_remote_player_name", sender, clean_name)
 
 
