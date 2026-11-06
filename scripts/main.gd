@@ -1,7 +1,7 @@
 extends Node3D
 
-const WORLD_SIZE := 120.0
-const GRID_STEPS := 100
+const WORLD_SIZE := 512.0
+const GRID_STEPS := 160
 const PLAYER_SPEED := 7.0
 const GRAVITY := 22.0
 const JUMP_VELOCITY := 8.0
@@ -27,7 +27,11 @@ var sky_material: ProceduralSkyMaterial
 var sun_light: DirectionalLight3D
 var tree_trunks: MultiMeshInstance3D
 var tree_canopies: MultiMeshInstance3D
+var grass_field: MultiMeshInstance3D
+var rock_field: MultiMeshInstance3D
 var total_tree_instances := 0
+var total_grass_instances := 0
+var total_rock_instances := 0
 var current_tree_density := 1.0
 var world_clock := 8.0
 var hunger := 100.0
@@ -92,6 +96,8 @@ func _ready() -> void:
     print("WORLDS_STAGE river")
     _create_forest()
     print("WORLDS_STAGE forest")
+    _create_environment_details()
+    print("WORLDS_STAGE environment_details")
     _create_foraging_bushes()
     print("WORLDS_STAGE forage")
     _create_campsite()
@@ -147,11 +153,14 @@ func _create_environment() -> void:
     add_child(sun_light)
 
 func _height_at(x: float, z: float) -> float:
-    var hills := sin(x * 0.055) * 1.7 + cos(z * 0.047) * 1.5
-    hills += sin((x + z) * 0.025) * 2.2
-    var river_bank: float = absf(x - sin(z * 0.035) * 8.0)
-    var valley: float = -maxf(0.0, 1.0 - river_bank / 13.0) * 1.1
-    return hills + valley
+    var broad_hills := sin(x * 0.013) * 6.5 + cos(z * 0.011) * 7.0
+    broad_hills += sin((x + z) * 0.008) * 5.0
+    var ridge_wave := maxf(0.0, sin((x - z) * 0.021 + cos(z * 0.009)))
+    var ridges := ridge_wave * ridge_wave * 8.5
+    var river_bank: float = absf(x - sin(z * 0.018) * 18.0)
+    var valley: float = -maxf(0.0, 1.0 - river_bank / 26.0) * 2.8
+    var upland := maxf(0.0, sin(x * 0.004 + z * 0.006)) * 4.0
+    return broad_hills + ridges + upland + valley
 
 func _create_terrain() -> void:
     var vertices := PackedVector3Array()
@@ -166,9 +175,10 @@ func _create_terrain() -> void:
             var y := _height_at(x, z)
             vertices.append(Vector3(x, y, z))
 
-            var tint := Color(0.22, 0.42, 0.20)
-            var variation: float = clampf((y + 4.0) / 12.0, 0.0, 1.0)
-            tint = tint.lerp(Color(0.38, 0.48, 0.29), variation * 0.55)
+            var tint := Color(0.20, 0.39, 0.18)
+            var variation: float = clampf((y + 3.0) / 24.0, 0.0, 1.0)
+            var ground_breakup := sin(x * 0.19) * cos(z * 0.16) * 0.045
+            tint = tint.lerp(Color(0.43, 0.49, 0.30), clampf(variation * 0.62 + ground_breakup, 0.0, 0.72))
             colors.append(tint)
 
     for z_index in range(GRID_STEPS):
@@ -225,7 +235,7 @@ func _create_river() -> void:
 
     for i in range(segments + 1):
         var z := -WORLD_SIZE * 0.5 + float(i) * WORLD_SIZE / float(segments)
-        var center_x := sin(z * 0.035) * 8.0
+        var center_x := sin(z * 0.018) * 18.0
         var water_y := _height_at(center_x, z) - 0.12
         vertices.append(Vector3(center_x - 4.2, water_y, z))
         vertices.append(Vector3(center_x + 4.2, water_y, z))
@@ -262,10 +272,10 @@ func _create_forest() -> void:
     rng.seed = 20261106
 
     var tree_positions: Array[Dictionary] = []
-    for i in range(95):
+    for i in range(750):
         var x := rng.randf_range(-WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
         var z := rng.randf_range(-WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
-        if abs(x - sin(z * 0.035) * 8.0) < 7.0:
+        if abs(x - sin(z * 0.018) * 18.0) < 13.0:
             continue
         if Vector2(x, z).length() < 12.0:
             continue
@@ -287,10 +297,12 @@ func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
 
     var bark := StandardMaterial3D.new()
     bark.albedo_color = Color(0.27, 0.16, 0.09)
+    bark.vertex_color_use_as_albedo = true
     bark.roughness = 1.0
 
     var trunk_multi := MultiMesh.new()
     trunk_multi.transform_format = MultiMesh.TRANSFORM_3D
+    trunk_multi.use_colors = true
     trunk_multi.mesh = trunk_mesh
     trunk_multi.instance_count = tree_positions.size()
 
@@ -300,13 +312,17 @@ func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
 
     var leaves := StandardMaterial3D.new()
     leaves.albedo_color = Color(0.12, 0.31, 0.15)
+    leaves.vertex_color_use_as_albedo = true
     leaves.roughness = 0.92
 
     var crown_multi := MultiMesh.new()
     crown_multi.transform_format = MultiMesh.TRANSFORM_3D
+    crown_multi.use_colors = true
     crown_multi.mesh = crown_mesh
     crown_multi.instance_count = tree_positions.size()
 
+    var tree_rng := RandomNumberGenerator.new()
+    tree_rng.seed = 20261107
     for i in range(tree_positions.size()):
         var tree_data: Dictionary = tree_positions[i]
         var tree_position: Vector3 = tree_data["position"]
@@ -315,10 +331,17 @@ func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
         var trunk_basis := Basis.from_scale(Vector3(tree_scale, tree_scale, tree_scale))
         var trunk_transform := Transform3D(trunk_basis, tree_position + Vector3(0, 1.05 * tree_scale, 0))
         trunk_multi.set_instance_transform(i, trunk_transform)
+        trunk_multi.set_instance_color(i, Color(0.23, 0.13, 0.075).lerp(Color(0.38, 0.24, 0.13), tree_rng.randf() * 0.55))
 
-        var crown_basis := Basis.from_scale(Vector3(tree_scale, tree_scale, tree_scale))
+        var crown_scale := Vector3(
+            tree_scale * tree_rng.randf_range(0.92, 1.28),
+            tree_scale * tree_rng.randf_range(0.88, 1.25),
+            tree_scale * tree_rng.randf_range(0.92, 1.30)
+        )
+        var crown_basis := Basis.from_euler(Vector3(0.0, tree_rng.randf_range(0.0, TAU), 0.0)).scaled(crown_scale)
         var crown_transform := Transform3D(crown_basis, tree_position + Vector3(0, 2.45 * tree_scale, 0))
         crown_multi.set_instance_transform(i, crown_transform)
+        crown_multi.set_instance_color(i, Color(0.075, 0.24, 0.105).lerp(Color(0.24, 0.42, 0.16), tree_rng.randf() * 0.8))
 
     tree_trunks = MultiMeshInstance3D.new()
     tree_trunks.name = "TreeTrunks"
@@ -332,6 +355,87 @@ func _create_tree_instances(tree_positions: Array[Dictionary]) -> void:
     tree_canopies.material_override = leaves
     add_child(tree_canopies)
     total_tree_instances = tree_positions.size()
+
+func _create_environment_details() -> void:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = 20261108
+
+    var grass_mesh := CylinderMesh.new()
+    grass_mesh.top_radius = 0.018
+    grass_mesh.bottom_radius = 0.075
+    grass_mesh.height = 0.48
+    grass_mesh.radial_segments = 4
+    var grass_multi := MultiMesh.new()
+    grass_multi.transform_format = MultiMesh.TRANSFORM_3D
+    grass_multi.use_colors = true
+    grass_multi.mesh = grass_mesh
+    grass_multi.instance_count = 4200
+
+    var grass_material := StandardMaterial3D.new()
+    grass_material.vertex_color_use_as_albedo = true
+    grass_material.albedo_color = Color(0.20, 0.38, 0.14)
+    grass_material.roughness = 1.0
+
+    for i in range(grass_multi.instance_count):
+        var x := rng.randf_range(-WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+        var z := rng.randf_range(-WORLD_SIZE * 0.47, WORLD_SIZE * 0.47)
+        if absf(x - sin(z * 0.018) * 18.0) < 9.0 or Vector2(x, z).length() < 20.0:
+            grass_multi.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3(0, -1000, 0)))
+            continue
+        var height_scale := rng.randf_range(0.65, 1.35)
+        var blade_scale := rng.randf_range(0.75, 1.35)
+        var basis := Basis.from_euler(Vector3(0.0, rng.randf_range(0.0, TAU), 0.0)).scaled(
+            Vector3(blade_scale, blade_scale * height_scale, blade_scale)
+        )
+        var pos := Vector3(x, _height_at(x, z) + 0.18 * height_scale, z)
+        grass_multi.set_instance_transform(i, Transform3D(basis, pos))
+        grass_multi.set_instance_color(i, Color(0.12, 0.30, 0.10).lerp(Color(0.34, 0.47, 0.18), rng.randf() * 0.75))
+
+    grass_field = MultiMeshInstance3D.new()
+    grass_field.name = "MeadowGrass"
+    grass_field.multimesh = grass_multi
+    grass_field.material_override = grass_material
+    add_child(grass_field)
+    total_grass_instances = grass_multi.instance_count
+
+    var rock_mesh := SphereMesh.new()
+    rock_mesh.radius = 0.72
+    rock_mesh.height = 1.0
+    rock_mesh.radial_segments = 8
+    rock_mesh.rings = 4
+    var rock_multi := MultiMesh.new()
+    rock_multi.transform_format = MultiMesh.TRANSFORM_3D
+    rock_multi.use_colors = true
+    rock_multi.mesh = rock_mesh
+    rock_multi.instance_count = 260
+
+    var rock_material := StandardMaterial3D.new()
+    rock_material.vertex_color_use_as_albedo = true
+    rock_material.albedo_color = Color(0.40, 0.42, 0.39)
+    rock_material.roughness = 0.96
+
+    for i in range(rock_multi.instance_count):
+        var x := rng.randf_range(-WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
+        var z := rng.randf_range(-WORLD_SIZE * 0.46, WORLD_SIZE * 0.46)
+        var river_distance := absf(x - sin(z * 0.018) * 18.0)
+        var scale := rng.randf_range(0.55, 1.65)
+        var rock_basis := Basis.from_euler(Vector3(
+            rng.randf_range(-0.18, 0.18),
+            rng.randf_range(0.0, TAU),
+            rng.randf_range(-0.18, 0.18)
+        )).scaled(Vector3(scale * 1.25, scale * 0.72, scale))
+        var rock_position := Vector3(x, _height_at(x, z) + scale * 0.22, z)
+        if river_distance < 8.0:
+            rock_position.y -= 1000.0
+        rock_multi.set_instance_transform(i, Transform3D(rock_basis, rock_position))
+        rock_multi.set_instance_color(i, Color(0.31, 0.34, 0.33).lerp(Color(0.58, 0.56, 0.49), rng.randf() * 0.7))
+
+    rock_field = MultiMeshInstance3D.new()
+    rock_field.name = "FieldRocks"
+    rock_field.multimesh = rock_multi
+    rock_field.material_override = rock_material
+    add_child(rock_field)
+    total_rock_instances = rock_multi.instance_count
 
 func _create_player() -> void:
     player = CharacterBody3D.new()
@@ -876,7 +980,7 @@ func _nearest_interaction_for(position: Vector3) -> Dictionary:
     var best_distance := INF
     var result := {"action": "", "index": -1}
 
-    var river_center := sin(position.z * 0.035) * 8.0
+    var river_center := sin(position.z * 0.018) * 18.0
     var river_distance: float = absf(position.x - river_center)
     if river_distance < 5.5 and absf(position.z) < WORLD_SIZE * 0.5:
         best_distance = river_distance
@@ -1010,7 +1114,7 @@ func _nearest_interaction() -> String:
     var best_distance := INF
     var best_action := ""
 
-    var river_center := sin(player.position.z * 0.035) * 8.0
+    var river_center := sin(player.position.z * 0.018) * 18.0
     var river_distance: float = absf(player.position.x - river_center)
     if river_distance < 5.5 and abs(player.position.z) < WORLD_SIZE * 0.5:
         best_distance = river_distance
@@ -1759,6 +1863,10 @@ func _set_tree_density(density: float) -> void:
         tree_trunks.multimesh.visible_instance_count = visible_count
     if tree_canopies and tree_canopies.multimesh:
         tree_canopies.multimesh.visible_instance_count = visible_count
+    if grass_field and grass_field.multimesh:
+        grass_field.multimesh.visible_instance_count = clampi(roundi(float(total_grass_instances) * current_tree_density), 1, total_grass_instances)
+    if rock_field and rock_field.multimesh:
+        rock_field.multimesh.visible_instance_count = clampi(roundi(float(total_rock_instances) * current_tree_density), 1, total_rock_instances)
 
 func _on_fps_selected(index: int) -> void:
     current_fps_target = fps_option.get_item_id(index)
