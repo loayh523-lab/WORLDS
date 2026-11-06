@@ -1475,6 +1475,7 @@ func _process(delta: float) -> void:
     _update_build_preview()
     _update_wildlife(delta)
     _update_village_agents(delta)
+    _animate_villager_limbs(delta)
     _update_adaptive_quality(delta)
     metrics_refresh_timer += delta
     if minimap_marker and player:
@@ -2831,6 +2832,8 @@ func _create_village() -> void:
         head.position.y = 1.78
         head.material_override = skin_material
         npc.add_child(head)
+        var npc_arms: Array[MeshInstance3D] = []
+        var npc_legs: Array[MeshInstance3D] = []
         for side in [-1.0, 1.0]:
             var arm := MeshInstance3D.new()
             var arm_mesh := CapsuleMesh.new()
@@ -2841,6 +2844,7 @@ func _create_village() -> void:
             arm.rotation.z = side * -0.12
             arm.material_override = outfit
             npc.add_child(arm)
+            npc_arms.append(arm)
             var leg := MeshInstance3D.new()
             var leg_mesh := CapsuleMesh.new()
             leg_mesh.radius = 0.12
@@ -2849,6 +2853,7 @@ func _create_village() -> void:
             leg.position = Vector3(side * 0.16, 0.39, 0.0)
             leg.material_override = wood_material
             npc.add_child(leg)
+            npc_legs.append(leg)
         village_agents.append({
             "root": npc,
             "home": npc.position,
@@ -2856,6 +2861,9 @@ func _create_village() -> void:
             "timer": npc_rng.randf_range(1.0, 4.0),
             "speed": npc_rng.randf_range(0.65, 1.05),
             "phase": npc_rng.randf_range(0.0, TAU),
+            "arms": npc_arms,
+            "legs": npc_legs,
+            "walking": false,
             "schedule_slot": -1
         })
 
@@ -2908,6 +2916,7 @@ func _update_village_agents(delta: float) -> void:
             var distance_squared := root.global_position.distance_squared_to(player.global_position)
             root.visible = distance_squared <= 155.0 * 155.0
             if distance_squared > 110.0 * 110.0:
+                villager["walking"] = false
                 villager["timer"] = maxf(0.0, float(villager["timer"]) - step_delta)
                 village_agents[index] = villager
                 continue
@@ -2928,12 +2937,38 @@ func _update_village_agents(delta: float) -> void:
             target.y = _height_at(target.x, target.z)
             timer = randf_range(2.0, 6.0)
         var direction := Vector3(target.x - root.position.x, 0.0, target.z - root.position.z)
-        if direction.length() > 0.12:
+        var is_walking := direction.length() > 0.12
+        villager["walking"] = is_walking
+        if is_walking:
             root.position += direction.normalized() * float(villager["speed"]) * step_delta
             root.rotation.y = lerp_angle(root.rotation.y, atan2(-direction.x, -direction.z), minf(1.0, step_delta * 3.0))
         root.position.y = lerpf(root.position.y, _height_at(root.position.x, root.position.z), minf(1.0, step_delta * 8.0))
         villager["target"] = target
         villager["timer"] = timer
+        village_agents[index] = villager
+
+func _animate_villager_limbs(delta: float) -> void:
+    for index in range(village_agents.size()):
+        var villager: Dictionary = village_agents[index]
+        var arms: Array = villager.get("arms", [])
+        var legs: Array = villager.get("legs", [])
+        if arms.size() < 2 or legs.size() < 2:
+            continue
+        var phase := float(villager.get("phase", 0.0))
+        var swing := 0.0
+        if bool(villager.get("walking", false)):
+            phase += delta * float(villager.get("speed", 0.8)) * 7.0
+            swing = sin(phase) * 0.42
+        for limb_index in range(2):
+            var arm := arms[limb_index] as MeshInstance3D
+            var leg := legs[limb_index] as MeshInstance3D
+            if is_instance_valid(arm):
+                var arm_target := swing if limb_index == 0 else -swing
+                arm.rotation.x = lerpf(arm.rotation.x, arm_target, minf(1.0, delta * 12.0))
+            if is_instance_valid(leg):
+                var leg_target := -swing if limb_index == 0 else swing
+                leg.rotation.x = lerpf(leg.rotation.x, leg_target, minf(1.0, delta * 12.0))
+        villager["phase"] = phase
         village_agents[index] = villager
 
 func _constrain_wildlife_target(target: Vector3, origin: Vector3) -> Vector3:
@@ -3842,6 +3877,21 @@ func _start_gameplay_smoke_test() -> void:
         return
     if village_agents.size() < 8 or _villager_dialogue(0).is_empty():
         push_error("GAMEPLAY_SMOKE_FAIL: villager interaction content is missing")
+        get_tree().quit(1)
+        return
+    var animated_villager: Dictionary = village_agents[0]
+    var animated_arms: Array = animated_villager.get("arms", [])
+    var animated_legs: Array = animated_villager.get("legs", [])
+    if animated_arms.size() != 2 or animated_legs.size() != 2:
+        push_error("GAMEPLAY_SMOKE_FAIL: villager limb animation rig is incomplete")
+        get_tree().quit(1)
+        return
+    animated_villager["walking"] = true
+    animated_villager["phase"] = 0.0
+    village_agents[0] = animated_villager
+    _animate_villager_limbs(0.1)
+    if absf((animated_legs[0] as MeshInstance3D).rotation.x) < 0.01:
+        push_error("GAMEPLAY_SMOKE_FAIL: villager walking animation did not move its legs")
         get_tree().quit(1)
         return
     if get_node_or_null("Valleywatch_Overlook") == null:
