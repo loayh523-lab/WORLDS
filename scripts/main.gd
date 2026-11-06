@@ -10,6 +10,11 @@ const CAMERA_DRAG_SENSITIVITY := 0.006
 var player: CharacterBody3D
 var camera_pivot: Node3D
 var camera: Camera3D
+var left_arm: MeshInstance3D
+var right_arm: MeshInstance3D
+var left_leg: MeshInstance3D
+var right_leg: MeshInstance3D
+var gait_time := 0.0
 var pressed_actions: Dictionary = {}
 var hud_label: Label
 var mobile_controls: Control
@@ -270,16 +275,63 @@ func _create_player() -> void:
     collider.position.y = 0.9
     player.add_child(collider)
 
-    var body_mesh := MeshInstance3D.new()
-    var capsule_mesh := CapsuleMesh.new()
-    capsule_mesh.radius = 0.42
-    capsule_mesh.height = 1.8
-    body_mesh.mesh = capsule_mesh
-    body_mesh.position.y = 0.9
-    var player_material := StandardMaterial3D.new()
-    player_material.albedo_color = Color(0.82, 0.72, 0.48)
-    body_mesh.material_override = player_material
-    player.add_child(body_mesh)
+    var visual := Node3D.new()
+    visual.name = "CharacterVisual"
+    player.add_child(visual)
+
+    var torso := _make_capsule_part(0.34, 1.12, Color(0.16, 0.30, 0.23))
+    torso.position = Vector3(0, 1.16, 0)
+    visual.add_child(torso)
+
+    var head := MeshInstance3D.new()
+    var head_mesh := SphereMesh.new()
+    head_mesh.radius = 0.245
+    head_mesh.height = 0.49
+    head.mesh = head_mesh
+    head.position = Vector3(0, 1.88, 0)
+    var skin_material := StandardMaterial3D.new()
+    skin_material.albedo_color = Color(0.66, 0.46, 0.32)
+    head.material_override = skin_material
+    visual.add_child(head)
+
+    var hair := MeshInstance3D.new()
+    var hair_mesh := SphereMesh.new()
+    hair_mesh.radius = 0.25
+    hair_mesh.height = 0.22
+    hair.mesh = hair_mesh
+    hair.position = Vector3(0, 2.04, -0.025)
+    var hair_material := StandardMaterial3D.new()
+    hair_material.albedo_color = Color(0.12, 0.10, 0.08)
+    hair.material_override = hair_material
+    visual.add_child(hair)
+
+    left_arm = _make_capsule_part(0.13, 0.78, Color(0.19, 0.34, 0.26))
+    left_arm.position = Vector3(-0.40, 1.25, 0)
+    left_arm.rotation.z = PI * 0.5
+    visual.add_child(left_arm)
+
+    right_arm = _make_capsule_part(0.13, 0.78, Color(0.19, 0.34, 0.26))
+    right_arm.position = Vector3(0.40, 1.25, 0)
+    right_arm.rotation.z = PI * 0.5
+    visual.add_child(right_arm)
+
+    left_leg = _make_capsule_part(0.15, 0.82, Color(0.18, 0.20, 0.21))
+    left_leg.position = Vector3(-0.17, 0.43, 0)
+    visual.add_child(left_leg)
+
+    right_leg = _make_capsule_part(0.15, 0.82, Color(0.18, 0.20, 0.21))
+    right_leg.position = Vector3(0.17, 0.43, 0)
+    visual.add_child(right_leg)
+
+    var backpack := MeshInstance3D.new()
+    var backpack_mesh := BoxMesh.new()
+    backpack_mesh.size = Vector3(0.48, 0.56, 0.24)
+    backpack.mesh = backpack_mesh
+    backpack.position = Vector3(0, 1.23, 0.29)
+    var backpack_material := StandardMaterial3D.new()
+    backpack_material.albedo_color = Color(0.29, 0.22, 0.13)
+    backpack.material_override = backpack_material
+    visual.add_child(backpack)
 
     camera_pivot = Node3D.new()
     camera_pivot.name = "CameraPivot"
@@ -292,6 +344,18 @@ func _create_player() -> void:
     camera.rotation_degrees = Vector3(-14, 0, 0)
     camera.current = true
     camera_pivot.add_child(camera)
+
+func _make_capsule_part(radius: float, height: float, color: Color) -> MeshInstance3D:
+    var part := MeshInstance3D.new()
+    var mesh := CapsuleMesh.new()
+    mesh.radius = radius
+    mesh.height = height
+    part.mesh = mesh
+    var material := StandardMaterial3D.new()
+    material.albedo_color = color
+    material.roughness = 0.92
+    part.material_override = material
+    return part
 
 func _create_hud() -> void:
     var layer := CanvasLayer.new()
@@ -706,6 +770,23 @@ func _physics_process(delta: float) -> void:
         player.velocity.y = 0.0
 
     player.move_and_slide()
+    _update_character_animation(delta, direction.length_squared() > 0.01)
+
+func _update_character_animation(delta: float, is_moving: bool) -> void:
+    if not left_arm or not right_arm or not left_leg or not right_leg:
+        return
+    if is_moving and player.is_on_floor():
+        gait_time += delta * 8.5
+        var swing := sin(gait_time) * 0.48
+        left_leg.rotation.x = swing
+        right_leg.rotation.x = -swing
+        left_arm.rotation.x = -swing * 0.72
+        right_arm.rotation.x = swing * 0.72
+    else:
+        left_leg.rotation.x = lerp_angle(left_leg.rotation.x, 0.0, delta * 8.0)
+        right_leg.rotation.x = lerp_angle(right_leg.rotation.x, 0.0, delta * 8.0)
+        left_arm.rotation.x = lerp_angle(left_arm.rotation.x, 0.0, delta * 8.0)
+        right_arm.rotation.x = lerp_angle(right_arm.rotation.x, 0.0, delta * 8.0)
 
 func _button_down(action: String) -> bool:
     return pressed_actions.has(action)
